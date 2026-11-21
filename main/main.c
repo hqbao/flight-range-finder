@@ -23,6 +23,9 @@
 #define INTER_MEASUREMENT_MS 25
 #define STATUS_ERROR 0xFF
 #define FRAME_LEN 8
+#define PIN_LED 21
+#define LED_ON 0
+#define LED_VALID_DIV 10
 
 static VL53L1_Dev_t dev;
 static TaskHandle_t lidar_task;
@@ -61,6 +64,16 @@ static void emit(const uint8_t *f)
 #endif
 }
 
+static void blink(uint8_t status)
+{
+    static uint32_t n;
+    static int level = LED_ON;
+    if (status != 0 || ++n % LED_VALID_DIV == 0) {
+        level = !level;
+        gpio_set_level(PIN_LED, level);
+    }
+}
+
 static void lidar_loop(void *arg)
 {
     uint8_t seq = 0, frame[FRAME_LEN];
@@ -86,12 +99,19 @@ static void lidar_loop(void *arg)
         }
         build_frame(frame, seq++, status, range);
         emit(frame);
+        blink(status);
+        if (status == STATUS_ERROR) {
+            vTaskDelay(pdMS_TO_TICKS(INTER_MEASUREMENT_MS));
+        }
         VL53L1_ClearInterruptAndStartMeasurement(&dev);
     }
 }
 
 void app_main(void)
 {
+    gpio_config_t led = {.pin_bit_mask = 1ULL << PIN_LED, .mode = GPIO_MODE_OUTPUT};
+    ESP_ERROR_CHECK(gpio_config(&led));
+    gpio_set_level(PIN_LED, LED_ON);
     uart_config_t uc = {
         .baud_rate = FRAME_BAUD,
         .data_bits = UART_DATA_8_BITS,

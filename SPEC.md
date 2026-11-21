@@ -3,8 +3,8 @@
 ## Card
 - Purpose: VL53L1X range to bytes on a UART with the least latency from range-ready to the wire.
 - Inputs: VL53L1X on I2C (0x29); optional data-ready interrupt on D0.
-- Outputs: 8-byte frames on UART0 TX (GPIO43, 921600 8N1), one per reading; one boot text line on USB-Serial-JTAG.
-- Invariants: one task, core 1; frame is written to the UART before anything else after the I2C result read; no per-frame logging; the frame UART carries no text; seq +1 per frame (wraps); an I2C error still sends a frame (status 0xFF, range 0).
+- Outputs: 8-byte frames on UART0 TX (GPIO43, 921600 8N1), one per reading; one boot text line on USB-Serial-JTAG; the user LED (Status LED).
+- Invariants: one task, core 1; frame is written to the UART before anything else after the I2C result read; no per-frame logging; the frame UART carries no text; seq +1 per frame (wraps); an I2C error still sends a frame (status 0xFF, range 0), at most one per 25 ms.
 - Code: `main/main.c`; driver `libs/vl53l1x` (ST API, unchanged); host tools `tools/`.
 
 ## Pins (XIAO ESP32-S3)
@@ -15,6 +15,16 @@
 | Frame UART TX | D6 | 43 |
 | Frame UART RX (unused) | D7 | 44 |
 | VL53L1X GPIO1 (ISR mode only) | D0 | 1 |
+| User LED (on board, on when low; Seeed XIAO ESP32-S3 wiki, NOT verified on this board) | - | 21 |
+
+## Status LED (owner 2026-11-21: see at a glance that ranges are coming)
+| LED | Meaning |
+|---|---|
+| steady on | booted, no reading yet (init, or the loop or sensor stuck) |
+| slow blink, 2 per second | valid readings (status 0): toggles every 10th valid frame, at 40 frames/s |
+| fast flicker, about 20 per second | readings arrive but are not valid (out of range, signal fail, or 0xFF error): toggles on every such frame |
+| frozen on or off after blinking | readings stopped |
+The LED is set after the frame is written, so it adds nothing to the frame's delay.
 
 Console and logs use USB-Serial-JTAG (`CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG`); bootloader log level none.
 
@@ -53,7 +63,8 @@ Boot line (USB): `xiao_lidar mac=.. mode=LONG budget_us=.. imp_ms=.. roi=16x16 b
 | EC-L4 | seq 255 -> 0 is not a gap | `test_ec_l4_seq_wrap` |
 | EC-L5 | A 2-frame gap is counted as 2 | `test_ec_l5_gap` |
 | EC-L6 | A frame split across reads decodes | `test_ec_l6_split_feed` |
-| EC-L7 | I2C error sends status 0xFF, range 0 | NOT tested (needs a board); NOT verified running |
+| EC-L7 | I2C error (sensor unplugged) sends status 0xFF, range 0, at most one per 25 ms (so the LED flickers, not a 1 kHz glow) | NOT tested (needs a board); NOT verified running |
+| EC-L8 | the LED follows the Status LED table: steady on at boot, 2 Hz blink on valid readings, fast flicker on invalid ones | NOT tested (needs a board): bench, sensor covered / pointed at the ceiling / unplugged |
 
 ## Open
 - ESP32-S3 ROM prints boot text on GPIO43 at power-on; the receiver must resync (sync bytes + checksum).
