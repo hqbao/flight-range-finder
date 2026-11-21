@@ -18,13 +18,17 @@ A Seeed XIAO ESP32-S3 reads a VL53L1X laser over I2C and sends each reading to t
 Full at boot; then brighter the farther the target (dim up close, full at 4 m); a fast flicker when readings are bad (out of range, no signal, sensor unplugged); frozen when readings stop (wave a hand to check). Details: SPEC.md Status LED.
 
 ## Build, flash, watch
+Build and flash in one command, from any folder (it loads ESP-IDF and finds the XIAO's port itself):
 ```bash
-cd /Users/bao/skydev/flight-range-finder
-source ~/skydev-research/esp/esp-idf/export.sh
-./build.sh --usb-frames 1 --flash /dev/cu.usbmodem101
-python3 tools/view_lidar.py --port /dev/cu.usbmodem101 --seconds 10
+/Users/bao/skydev/flight-range-finder/build.sh --flash
 ```
-- `--usb-frames 1` also sends every frame over USB, so the Mac can watch the ranges; it costs the UART nothing. `--usb-frames 0` keeps USB for the boot text only.
-- The port name is what the XIAO gets on your Mac (`ls /dev/cu.usbmodem*`). If flashing cannot connect, hold BOOT while plugging the USB in, then flash again.
+Watch the ranges:
+```bash
+python3 /Users/bao/skydev/flight-range-finder/tools/view_lidar.py --port /dev/cu.usbmodem101 --seconds 10
+```
+- Without `--flash` it only builds. With more than one USB serial device plugged in, name the port: `--flash /dev/cu.usbmodemXXX`.
+- Every frame also goes over USB by default, so the Mac can watch; it costs the UART nothing. `--usb-frames 0` keeps USB for the boot text only.
+- ESP-IDF comes from `~/skydev-research/esp/esp-idf` (or `$IDF_PATH`) with its installed Python environment, so a shell whose `python3` is a newer version still builds.
+- If flashing cannot connect, hold BOOT while plugging the USB in, then flash again.
 - `view_lidar.py` prints once a second: frames/s, sequence gaps, bad checksums, status counts, range min/mean/max (mm), frame interval p50/p99 (ms).
 - Test the decoder: `python3 tools/test_view_lidar.py`.

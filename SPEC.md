@@ -3,7 +3,7 @@
 ## Card
 - Purpose: VL53L1X range to bytes on a UART with the least latency from range-ready to the wire.
 - Inputs: VL53L1X on I2C (0x29); optional data-ready interrupt on D0.
-- Outputs: 8-byte frames on UART0 TX (GPIO43, 921600 8N1), one per reading; one boot text line on USB-Serial-JTAG; the user LED (Status LED).
+- Outputs: 8-byte frames on UART0 TX (GPIO43, 921600 8N1), one per reading; one boot text line, then (default) the same frames, on USB-Serial-JTAG; the user LED (Status LED).
 - Invariants: one task, core 1; frame is written to the UART before anything else after the I2C result read; no per-frame logging; the frame UART carries no text; seq +1 per frame (wraps); an I2C error still sends a frame (status 0xFF, range 0), at most one per 25 ms.
 - Code: `main/main.c`; driver `libs/vl53l1x` (ST API, unchanged); host tools `tools/`.
 
@@ -51,8 +51,10 @@ LONG distance mode; timing budget 20000 us; inter-measurement 25 ms; ROI 16x16 (
 | Option | Default | Meaning |
 |---|---|---|
 | `--int-gpio N` (LIDAR_INT_GPIO) | -1 | GPIO wired to VL53L1X GPIO1; -1 polls |
-| `--usb-frames 0\|1` (LIDAR_USB_FRAMES) | 0 | 1 also writes each frame to USB-Serial-JTAG after the UART write (non-blocking, dropped without a host) |
-| `--flash PORT` | - | builds, then flashes over the XIAO's USB at PORT (`idf.py -p PORT build flash`) |
+| `--usb-frames 0\|1` (LIDAR_USB_FRAMES) | 1 | 1 also writes each frame to USB-Serial-JTAG after the UART write (non-blocking, dropped without a host); 0 keeps USB for the boot line |
+| `--flash [PORT]` | - | builds, then flashes over the XIAO's USB (`idf.py -p PORT build flash`); no PORT: the one `/dev/cu.usbmodem*` or `/dev/ttyACM*`, else refuses naming them |
+
+`build.sh` runs from any folder; without `idf.py` on PATH it sources `$IDF_PATH` (default `~/skydev-research/esp/esp-idf`) `export.sh` with `IDF_PYTHON_ENV_PATH` set to the installed `~/.espressif/python_env/idf*_env` (a login shell's newer `python3` otherwise makes export.sh look for an env that does not exist).
 
 Boot line (USB): `xiao_lidar mac=.. mode=LONG budget_us=.. imp_ms=.. roi=16x16 baud=.. int_gpio=.. usb_frames=..`
 
