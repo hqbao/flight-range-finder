@@ -1,3 +1,30 @@
 # flight-range-finder
 
-ESP-IDF app for a Seeed XIAO ESP32-S3 that reads a VL53L1X laser range finder over I2C and writes each reading as an 8-byte binary frame to a UART the moment it is read. Build with `./build.sh` (ESP-IDF sourced); decode with `tools/view_lidar.py`; the spec is `SPEC.md`.
+A Seeed XIAO ESP32-S3 reads a VL53L1X laser over I2C and sends each reading to the flight controller as an 8-byte frame on its UART the moment it is read (921600 8N1, about 40 readings/s). The frame, timing, LED and edge cases are in [SPEC.md](SPEC.md).
+
+## Wiring
+| From | To |
+|---|---|
+| VL53L1X VIN | XIAO 3V3 |
+| VL53L1X GND | XIAO GND |
+| VL53L1X SDA | XIAO D4 |
+| VL53L1X SCL | XIAO D5 |
+| VL53L1X GPIO1 (optional, build with `--int-gpio 1`) | XIAO D0 |
+| XIAO D6 (TX) | flight controller J19 pin 1 (RX1, USART1) |
+| XIAO GND | flight controller J19 pin 3 (GND) |
+| XIAO power | 5 V on USB-C or the 5V pin (J19 has no power pin) |
+
+## LED (orange, on the XIAO)
+Full at boot; then brighter the farther the target (dim up close, full at 4 m); a fast flicker when readings are bad (out of range, no signal, sensor unplugged); frozen when readings stop (wave a hand to check). Details: SPEC.md Status LED.
+
+## Build, flash, watch
+```bash
+cd /Users/bao/skydev/flight-range-finder
+source ~/skydev-research/esp/esp-idf/export.sh
+./build.sh --usb-frames 1 --flash /dev/cu.usbmodem101
+python3 tools/view_lidar.py --port /dev/cu.usbmodem101 --seconds 10
+```
+- `--usb-frames 1` also sends every frame over USB, so the Mac can watch the ranges; it costs the UART nothing. `--usb-frames 0` keeps USB for the boot text only.
+- The port name is what the XIAO gets on your Mac (`ls /dev/cu.usbmodem*`). If flashing cannot connect, hold BOOT while plugging the USB in, then flash again.
+- `view_lidar.py` prints once a second: frames/s, sequence gaps, bad checksums, status counts, range min/mean/max (mm), frame interval p50/p99 (ms).
+- Test the decoder: `python3 tools/test_view_lidar.py`.

@@ -59,7 +59,7 @@ def open_port(port, baud):
     try:
         import serial
         s = serial.Serial(port, baud, timeout=0.05)
-        return (lambda: s.read(4096)), s.close
+        return (lambda: s.read(max(1, s.in_waiting))), s.close
     except ImportError:
         import termios
         fd = os.open(port, os.O_RDONLY | os.O_NOCTTY | os.O_NONBLOCK)

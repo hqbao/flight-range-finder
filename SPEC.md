@@ -52,6 +52,7 @@ LONG distance mode; timing budget 20000 us; inter-measurement 25 ms; ROI 16x16 (
 |---|---|---|
 | `--int-gpio N` (LIDAR_INT_GPIO) | -1 | GPIO wired to VL53L1X GPIO1; -1 polls |
 | `--usb-frames 0\|1` (LIDAR_USB_FRAMES) | 0 | 1 also writes each frame to USB-Serial-JTAG after the UART write (non-blocking, dropped without a host) |
+| `--flash PORT` | - | builds, then flashes over the XIAO's USB at PORT (`idf.py -p PORT build flash`) |
 
 Boot line (USB): `xiao_lidar mac=.. mode=LONG budget_us=.. imp_ms=.. roi=16x16 baud=.. int_gpio=.. usb_frames=..`
 
