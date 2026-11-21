@@ -14,7 +14,7 @@ def serial_ports():
 
 def callouts(node):
     for child in node.get("IORegistryEntryChildren", []):
-        if "idVendor" in child:
+        if child.get("IOObjectClass") == "IOUSBHostDevice":
             continue
         if "IOCalloutDevice" in child:
             yield child["IOCalloutDevice"]
