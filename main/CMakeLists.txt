@@ -1,5 +1,5 @@
 idf_component_register(SRCS "main.c" INCLUDE_DIRS "."
-                       REQUIRES vl53l1x driver esp_driver_gpio esp_driver_uart esp_driver_usb_serial_jtag esp_hw_support)
+                       REQUIRES vl53l1x driver esp_driver_gpio esp_driver_ledc esp_driver_uart esp_driver_usb_serial_jtag esp_hw_support)
 if(NOT DEFINED LIDAR_INT_GPIO)
     set(LIDAR_INT_GPIO -1)
 endif()

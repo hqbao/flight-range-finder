@@ -1,7 +1,9 @@
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
+#include "driver/ledc.h"
 #include "driver/uart.h"
 #include "driver/usb_serial_jtag.h"
 #include "esp_mac.h"
@@ -24,8 +26,10 @@
 #define STATUS_ERROR 0xFF
 #define FRAME_LEN 8
 #define PIN_LED 21
-#define LED_ON 0
-#define LED_VALID_DIV 10
+#define LED_BITS 13
+#define LED_MAX ((1u << LED_BITS) - 1)
+#define LED_MIN 80u
+#define LED_FULL_MM 4000u
 
 static VL53L1_Dev_t dev;
 static TaskHandle_t lidar_task;
@@ -64,14 +68,22 @@ static void emit(const uint8_t *f)
 #endif
 }
 
-static void blink(uint8_t status)
+static void led_set(uint32_t duty)
 {
-    static uint32_t n;
-    static int level = LED_ON;
-    if (status != 0 || ++n % LED_VALID_DIV == 0) {
-        level = !level;
-        gpio_set_level(PIN_LED, level);
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+}
+
+static void show(uint8_t status, uint16_t range)
+{
+    static bool flicker;
+    if (status != 0) {
+        flicker = !flicker;
+        led_set(flicker ? LED_MAX : 0);
+        return;
     }
+    uint32_t r = range < LED_FULL_MM ? range : LED_FULL_MM;
+    led_set(LED_MIN + (uint32_t)((uint64_t)(LED_MAX - LED_MIN) * r * r / (LED_FULL_MM * LED_FULL_MM)));
 }
 
 static void lidar_loop(void *arg)
@@ -99,7 +111,7 @@ static void lidar_loop(void *arg)
         }
         build_frame(frame, seq++, status, range);
         emit(frame);
-        blink(status);
+        show(status, range);
         if (status == STATUS_ERROR) {
             vTaskDelay(pdMS_TO_TICKS(INTER_MEASUREMENT_MS));
         }
@@ -109,9 +121,23 @@ static void lidar_loop(void *arg)
 
 void app_main(void)
 {
-    gpio_config_t led = {.pin_bit_mask = 1ULL << PIN_LED, .mode = GPIO_MODE_OUTPUT};
-    ESP_ERROR_CHECK(gpio_config(&led));
-    gpio_set_level(PIN_LED, LED_ON);
+    ledc_timer_config_t lt = {
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .duty_resolution = LED_BITS,
+        .timer_num = LEDC_TIMER_0,
+        .freq_hz = 5000,
+        .clk_cfg = LEDC_AUTO_CLK,
+    };
+    ESP_ERROR_CHECK(ledc_timer_config(&lt));
+    ledc_channel_config_t lc = {
+        .gpio_num = PIN_LED,
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .channel = LEDC_CHANNEL_0,
+        .timer_sel = LEDC_TIMER_0,
+        .duty = LED_MAX,
+        .flags.output_invert = 1,
+    };
+    ESP_ERROR_CHECK(ledc_channel_config(&lc));
     uart_config_t uc = {
         .baud_rate = FRAME_BAUD,
         .data_bits = UART_DATA_8_BITS,

@@ -17,13 +17,14 @@
 | VL53L1X GPIO1 (ISR mode only) | D0 | 1 |
 | User LED (on board, on when low; Seeed XIAO ESP32-S3 wiki, NOT verified on this board) | - | 21 |
 
-## Status LED (owner 2026-11-21: see at a glance that ranges are coming)
+## Status LED (owner 2026-11-21: see the laser working; the farther, the brighter)
+LEDC PWM on GPIO21 (low-speed timer 0, channel 0, 5 kHz, 13-bit, output inverted for the active-low LED).
 | LED | Meaning |
 |---|---|
-| steady on | booted, no reading yet (init, or the loop or sensor stuck) |
-| slow blink, 2 per second | valid readings (status 0): toggles every 10th valid frame, at 40 frames/s |
-| fast flicker, about 20 per second | readings arrive but are not valid (out of range, signal fail, or 0xFF error): toggles on every such frame |
-| frozen on or off after blinking | readings stopped |
+| full, steady | booted, no reading yet |
+| brightness follows the range | a valid reading (status 0): duty = 80 + (8191 - 80) x (r / 4000 mm)^2, r clamped to 4000 mm; the square makes the eye see brightness grow about evenly with distance; 80 (1 %) keeps a close reading visibly lit |
+| fast flicker, full / off | readings arrive but are not valid (out of range, signal fail, or 0xFF error): switches on every such frame, about 20 per second |
+| frozen | readings stopped; a still target looks the same, so move a hand to check |
 The LED is set after the frame is written, so it adds nothing to the frame's delay.
 
 Console and logs use USB-Serial-JTAG (`CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG`); bootloader log level none.
@@ -64,7 +65,7 @@ Boot line (USB): `xiao_lidar mac=.. mode=LONG budget_us=.. imp_ms=.. roi=16x16 b
 | EC-L5 | A 2-frame gap is counted as 2 | `test_ec_l5_gap` |
 | EC-L6 | A frame split across reads decodes | `test_ec_l6_split_feed` |
 | EC-L7 | I2C error (sensor unplugged) sends status 0xFF, range 0, at most one per 25 ms (so the LED flickers, not a 1 kHz glow) | NOT tested (needs a board); NOT verified running |
-| EC-L8 | the LED follows the Status LED table: steady on at boot, 2 Hz blink on valid readings, fast flicker on invalid ones | NOT tested (needs a board): bench, sensor covered / pointed at the ceiling / unplugged |
+| EC-L8 | the LED follows the Status LED table: full at boot, brighter as a hand moves away, fast flicker on invalid readings | NOT tested (needs a board): bench, a hand at 5 cm then 1 m, pointed at a far ceiling, sensor unplugged |
 
 ## Open
 - ESP32-S3 ROM prints boot text on GPIO43 at power-on; the receiver must resync (sync bytes + checksum).
