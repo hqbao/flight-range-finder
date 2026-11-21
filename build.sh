@@ -21,10 +21,22 @@ fi
 if [[ $FLASH == 1 && -z "$PORT" ]]; then
     shopt -s nullglob
     ports=(/dev/cu.usbmodem* /dev/ttyACM*)
-    if [[ ${#ports[@]} -ne 1 ]]; then
-        echo "found ${#ports[@]} USB serial ports (${ports[*]}): name one, ./build.sh --flash PORT"; exit 1
+    if [[ ${#ports[@]} -eq 0 ]]; then
+        echo "no XIAO on USB. Hold BOOT (B) and plug the USB in now (a data cable, not charge-only); waiting 30 s..."
+        for _ in $(seq 60); do
+            ports=(/dev/cu.usbmodem* /dev/ttyACM*)
+            [[ ${#ports[@]} -gt 0 ]] && break
+            sleep 0.5
+        done
+    fi
+    if [[ ${#ports[@]} -eq 0 ]]; then
+        echo "still no XIAO on USB after 30 s: try another cable (data, not charge-only) or another USB port"; exit 1
+    fi
+    if [[ ${#ports[@]} -gt 1 ]]; then
+        echo "found ${#ports[@]} USB serial ports (${ports[*]}): plug in only the XIAO, or name it: ./build.sh --flash PORT"; exit 1
     fi
     PORT="${ports[0]}"
+    echo "flashing the XIAO on $PORT"
 fi
 if [[ $FLASH == 1 ]]; then
     idf.py -DLIDAR_INT_GPIO=$INT -DLIDAR_USB_FRAMES=$USB -p "$PORT" build flash

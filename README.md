@@ -37,6 +37,6 @@ python3 /Users/bao/skydev/flight-range-finder/tools/view_lidar.py --port /dev/cu
 - Without `--flash` it only builds. With more than one USB serial device plugged in, name the port: `--flash /dev/cu.usbmodemXXX`.
 - Every frame also goes over USB by default, so the Mac can watch; it costs the UART nothing. `--usb-frames 0` keeps USB for the boot text only.
 - ESP-IDF comes from `~/skydev-research/esp/esp-idf` (or `$IDF_PATH`) with its installed Python environment, so a shell whose `python3` is a newer version still builds.
-- If flashing cannot connect, hold BOOT while plugging the USB in, then flash again.
+- A new XIAO, or one whose program does not keep USB alive, shows no port: the command then waits 30 s; hold BOOT (B) while plugging the USB in and it flashes. After flashing from BOOT, press RESET (R) if the LED does not start. Still nothing: the cable may be charge-only, or try another USB port.
 - `view_lidar.py` prints once a second: frames/s, sequence gaps, bad checksums, status counts, range min/mean/max (mm), frame interval p50/p99 (ms).
 - Test the decoder: `python3 tools/test_view_lidar.py`.
