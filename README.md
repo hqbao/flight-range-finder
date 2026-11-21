@@ -19,7 +19,7 @@ A Seeed XIAO ESP32-S3 reads a VL53L1X laser over I2C and sends each reading to t
 |---|---|
 | full, steady | just booted |
 | one blink per second | no sensor (not wired, or not answering); the XIAO sets the sensor up again every half second, so a re-plugged sensor starts by itself |
-| fast flashing, one flash per reading (40/s), brighter the farther | working: dim up close, full at 4 m (every reading, valid or not, shows its range) |
+| fast flashing, one flash per reading (40/s), brighter the farther | working: dim up close, full from 1 m on (every reading, valid or not, shows its range) |
 | off | readings stopped |
 
 Details: SPEC.md Status LED.

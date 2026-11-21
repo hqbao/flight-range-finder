@@ -12,6 +12,9 @@
 #include "freertos/task.h"
 #include "vl53l1_api.h"
 #include "vl53l1_api_core.h"
+#include "vl53l1_preset_setup.h"
+#include "vl53l1_register_map.h"
+#include "vl53l1_register_settings.h"
 
 #define PIN_SDA 5
 #define PIN_SCL 6
@@ -32,13 +35,15 @@
 #define LED_BITS 13
 #define LED_MAX ((1u << LED_BITS) - 1)
 #define LED_MIN 80u
-#define LED_FULL_MM 4000u
+#define LED_FULL_MM 1000u
 #define LED_FLASH_US 10000
 #define LED_ERR_HALF_US 500000
 #define READY_TIMEOUT_US 100000
 #define RESTART_AFTER_US 500000
+#define RESULT_LEN 15
 
 static VL53L1_Dev_t dev;
+static i2c_master_bus_handle_t bus;
 static TaskHandle_t lidar_task;
 static esp_timer_handle_t led_timer;
 
@@ -109,6 +114,64 @@ static void show(uint8_t status, uint16_t range)
     esp_timer_start_once(led_timer, LED_FLASH_US);
 }
 
+static uint8_t result_status(uint8_t device_status, uint8_t stream_count)
+{
+    switch (device_status) {
+    case VL53L1_DEVICEERROR_VCSELCONTINUITYTESTFAILURE:
+    case VL53L1_DEVICEERROR_VCSELWATCHDOGTESTFAILURE:
+    case VL53L1_DEVICEERROR_NOVHVVALUEFOUND:
+    case VL53L1_DEVICEERROR_MULTCLIPFAIL:
+        return VL53L1_RANGESTATUS_HARDWARE_FAIL;
+    case VL53L1_DEVICEERROR_USERROICLIP:
+        return VL53L1_RANGESTATUS_MIN_RANGE_FAIL;
+    case VL53L1_DEVICEERROR_GPHSTREAMCOUNT0READY:
+        return VL53L1_RANGESTATUS_SYNCRONISATION_INT;
+    case VL53L1_DEVICEERROR_RANGECOMPLETE_NO_WRAP_CHECK:
+        return VL53L1_RANGESTATUS_RANGE_VALID_NO_WRAP_CHECK_FAIL;
+    case VL53L1_DEVICEERROR_RANGEPHASECHECK:
+        return VL53L1_RANGESTATUS_OUTOFBOUNDS_FAIL;
+    case VL53L1_DEVICEERROR_MSRCNOTARGET:
+        return VL53L1_RANGESTATUS_SIGNAL_FAIL;
+    case VL53L1_DEVICEERROR_SIGMATHRESHOLDCHECK:
+        return VL53L1_RANGESTATUS_SIGMA_FAIL;
+    case VL53L1_DEVICEERROR_PHASECONSISTENCY:
+        return VL53L1_RANGESTATUS_WRAP_TARGET_FAIL;
+    case VL53L1_DEVICEERROR_RANGEIGNORETHRESHOLD:
+        return VL53L1_RANGESTATUS_XTALK_SIGNAL_FAIL;
+    case VL53L1_DEVICEERROR_MINCLIP:
+        return VL53L1_RANGESTATUS_RANGE_VALID_MIN_RANGE_CLIPPED;
+    case VL53L1_DEVICEERROR_RANGECOMPLETE:
+        return stream_count == 0 ? VL53L1_RANGESTATUS_RANGE_VALID_NO_WRAP_CHECK_FAIL : VL53L1_RANGESTATUS_RANGE_VALID;
+    default:
+        return VL53L1_RANGESTATUS_NONE;
+    }
+}
+
+static bool read_result(uint8_t *status, uint16_t *range)
+{
+    uint8_t b[RESULT_LEN];
+    if (VL53L1_ReadMulti(&dev, VL53L1_RESULT__RANGE_STATUS, b, RESULT_LEN) != VL53L1_ERROR_NONE &&
+        VL53L1_ReadMulti(&dev, VL53L1_RESULT__RANGE_STATUS, b, RESULT_LEN) != VL53L1_ERROR_NONE) {
+        return false;
+    }
+    int32_t mm = (int32_t)(uint16_t)(b[13] << 8 | b[14]);
+    mm *= (int32_t)dev.Data.LLData.gain_cal.standard_ranging_gain_factor;
+    mm += 0x0400;
+    mm /= 0x0800;
+    int16_t r = (int16_t)mm;
+    uint8_t s = result_status(b[0] & VL53L1_RANGE_STATUS__RANGE_STATUS_MASK, b[2]);
+    if (s == VL53L1_RANGESTATUS_RANGE_VALID && r < 0) {
+        if (r < TUNING_PROXY_MIN) {
+            s = VL53L1_RANGESTATUS_RANGE_INVALID;
+        } else {
+            r = 0;
+        }
+    }
+    *status = s;
+    *range = (uint16_t)r;
+    return true;
+}
+
 static VL53L1_Error sensor_start(void)
 {
     VL53L1_UserRoi_t roi = {.TopLeftX = 0, .TopLeftY = 15, .BotRightX = 15, .BotRightY = 0};
@@ -135,20 +198,21 @@ static void lidar_loop(void *arg)
 #endif
         uint8_t ready = 0;
         VL53L1_Error e = VL53L1_GetMeasurementDataReady(&dev, &ready);
+        if (e != VL53L1_ERROR_NONE) {
+            e = VL53L1_GetMeasurementDataReady(&dev, &ready);
+        }
         if (e == VL53L1_ERROR_NONE && !ready && esp_timer_get_time() - last_frame < READY_TIMEOUT_US) {
             continue;
         }
         uint8_t status = STATUS_ERROR;
         uint16_t range = 0;
-        if (e == VL53L1_ERROR_NONE && ready) {
-            VL53L1_RangingMeasurementData_t m;
-            if (VL53L1_GetRangingMeasurementData(&dev, &m) == VL53L1_ERROR_NONE) {
-                status = m.RangeStatus;
-                range = (uint16_t)m.RangeMilliMeter;
-            }
-        }
+        bool got = e == VL53L1_ERROR_NONE && ready && read_result(&status, &range);
         build_frame(frame, seq++, status, range);
         emit(frame);
+        if (got) {
+            VL53L1_RangingMeasurementData_t m;
+            VL53L1_GetRangingMeasurementData(&dev, &m);
+        }
         show(status, range);
         last_frame = esp_timer_get_time();
         if (status != STATUS_ERROR) {
@@ -159,6 +223,7 @@ static void lidar_loop(void *arg)
         vTaskDelay(pdMS_TO_TICKS(INTER_MEASUREMENT_MS));
         if (esp_timer_get_time() - last_good >= RESTART_AFTER_US) {
             last_good = esp_timer_get_time();
+            i2c_master_bus_reset(bus);
             sensor_start();
         } else {
             VL53L1_ClearInterruptAndStartMeasurement(&dev);
@@ -203,7 +268,6 @@ void app_main(void)
     ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&uj));
 #endif
 
-    i2c_master_bus_handle_t bus;
     i2c_master_bus_config_t bc = {
         .i2c_port = I2C_NUM_0,
         .sda_io_num = PIN_SDA,

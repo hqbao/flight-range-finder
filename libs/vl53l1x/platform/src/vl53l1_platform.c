@@ -47,7 +47,7 @@
 #include "vl53l1_platform_log.h"
 #include "vl53l1_api.h"
 
-#define I2C_TIMEOUT_MS 1000
+#define I2C_TIMEOUT_MS 10
 
 uint8_t _I2CBuffer[256];
 
