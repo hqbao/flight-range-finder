@@ -36,11 +36,11 @@ One script, from any folder (it loads ESP-IDF itself):
 `--list` shows each USB serial device and what it is (a XIAO shows as Espressif USB JTAG; its serial is the board's MAC). `--flash` builds if needed and flashes the one USB serial device, or the one `--device` names. No option prints the usage.
 Watch the ranges:
 ```bash
-python3 /Users/bao/skydev/flight-range-finder/tools/view_lidar.py --port /dev/cu.usbmodem101 --seconds 10
+python3 /Users/bao/skydev/flight-range-finder/tools/view_lidar.py --port /dev/cu.usbmodem101
 ```
-Every reading on its own line (time, seq, range, status and its meaning), until Ctrl+C:
+It runs until Ctrl+C (`--seconds N` stops it after N s). Every reading on its own line (time, seq, range, status and its meaning):
 ```bash
-python3 /Users/bao/skydev/flight-range-finder/tools/view_lidar.py --port /dev/cu.usbmodem101 --each --seconds 0
+python3 /Users/bao/skydev/flight-range-finder/tools/view_lidar.py --port /dev/cu.usbmodem101 --each
 ```
 - The viewer keeps waiting through a board restart or a re-plug and carries on. Only one program can use the port at a time: stop the viewer (Ctrl+C) before `--flash`.
 - With more than one USB serial device plugged in, `--flash` lists them and asks for `--device`.
