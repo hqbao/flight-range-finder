@@ -65,10 +65,15 @@ Boot line (USB): `xiao_lidar mac=.. mode=LONG budget_us=.. imp_ms=.. roi=16x16 b
 | EC-L4 | seq 255 -> 0 is not a gap | `test_ec_l4_seq_wrap` |
 | EC-L5 | A 2-frame gap is counted as 2 | `test_ec_l5_gap` |
 | EC-L6 | A frame split across reads decodes | `test_ec_l6_split_feed` |
-| EC-L7 | I2C error (sensor unplugged) sends status 0xFF, range 0, at most one per 25 ms (so the LED flickers, not a 1 kHz glow) | NOT tested (needs a board); NOT verified running |
+| EC-L7 | I2C error (sensor unplugged) sends status 0xFF, range 0, at most one per 25 ms (so the LED flickers, not a 1 kHz glow) | bench only: SEEN on the board (Measured facts 2026-11-21) |
 | EC-L8 | the LED follows the Status LED table: full at boot, brighter as a hand moves away, fast flicker on invalid readings | NOT tested (needs a board): bench, a hand at 5 cm then 1 m, pointed at a far ceiling, sensor unplugged |
+
+## Measured facts
+| Date | Condition | Fact | Source |
+|---|---|---|---|
+| 2026-11-21 | XIAO ESP32-S3 MAC 1c:db:d4:75:0b:b4, image db9dc9a `--usb-frames 1`, no VL53L1X fitted, frames read over USB on a Mac | every frame status 0xFF, range 0; 38-39 frames/s, interval p50 26.0 ms p99 26.2 ms, 0 seq gaps, 0 bad checksums; the LED flickers (owner) | `tools/view_lidar.py --port /dev/cu.usbmodem101 --seconds 4` |
 
 ## Open
 - ESP32-S3 ROM prints boot text on GPIO43 at power-on; the receiver must resync (sync bytes + checksum).
 - Ranging settings are untuned for flight.
-- Firmware has not been flashed or run: no board attached.
+- No reading from a fitted VL53L1X seen yet: ranging, valid status, the LED brightness and the range-to-wire delay are NOT verified running.
