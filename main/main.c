@@ -7,6 +7,7 @@
 #include "driver/uart.h"
 #include "driver/usb_serial_jtag.h"
 #include "esp_mac.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "vl53l1_api.h"
@@ -30,9 +31,12 @@
 #define LED_MAX ((1u << LED_BITS) - 1)
 #define LED_MIN 80u
 #define LED_FULL_MM 4000u
+#define LED_FLASH_US 10000
+#define LED_ERR_HALF_US 500000
 
 static VL53L1_Dev_t dev;
 static TaskHandle_t lidar_task;
+static esp_timer_handle_t led_timer;
 
 #if LIDAR_INT_GPIO >= 0
 static void IRAM_ATTR on_ready(void *arg)
@@ -74,16 +78,28 @@ static void led_set(uint32_t duty)
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
 }
 
+static void led_off(void *arg)
+{
+    led_set(0);
+}
+
 static void show(uint8_t status, uint16_t range)
 {
-    static bool flicker;
-    if (status != 0) {
-        flicker = !flicker;
-        led_set(flicker ? LED_MAX : 0);
+    static int64_t last_toggle;
+    static bool err_on;
+    esp_timer_stop(led_timer);
+    if (status == STATUS_ERROR) {
+        int64_t now = esp_timer_get_time();
+        if (now - last_toggle >= LED_ERR_HALF_US) {
+            last_toggle = now;
+            err_on = !err_on;
+            led_set(err_on ? LED_MAX : 0);
+        }
         return;
     }
     uint32_t r = range < LED_FULL_MM ? range : LED_FULL_MM;
-    led_set(LED_MIN + (uint32_t)((uint64_t)(LED_MAX - LED_MIN) * r * r / (LED_FULL_MM * LED_FULL_MM)));
+    led_set(status != 0 ? LED_MAX : LED_MIN + (uint32_t)((uint64_t)(LED_MAX - LED_MIN) * r * r / (LED_FULL_MM * LED_FULL_MM)));
+    esp_timer_start_once(led_timer, LED_FLASH_US);
 }
 
 static void lidar_loop(void *arg)
@@ -138,6 +154,8 @@ void app_main(void)
         .flags.output_invert = 1,
     };
     ESP_ERROR_CHECK(ledc_channel_config(&lc));
+    esp_timer_create_args_t ta = {.callback = led_off, .name = "led_off"};
+    ESP_ERROR_CHECK(esp_timer_create(&ta, &led_timer));
     uart_config_t uc = {
         .baud_rate = FRAME_BAUD,
         .data_bits = UART_DATA_8_BITS,

@@ -17,14 +17,15 @@
 | VL53L1X GPIO1 (ISR mode only) | D0 | 1 |
 | User LED (on board, on when low; Seeed XIAO ESP32-S3 wiki, NOT verified on this board) | - | 21 |
 
-## Status LED (owner 2026-11-21: see the laser working; the farther, the brighter)
-LEDC PWM on GPIO21 (low-speed timer 0, channel 0, 5 kHz, 13-bit, output inverted for the active-low LED).
+## Status LED (owner 2026-11-21: no sensor blinks once a second; a working sensor flashes once per reading, brighter the farther)
+LEDC PWM on GPIO21 (low-speed timer 0, channel 0, 5 kHz, 13-bit, output inverted for the active-low LED); a one-shot esp_timer turns each reading's flash off.
 | LED | Meaning |
 |---|---|
-| full, steady | booted, no reading yet |
-| brightness follows the range | a valid reading (status 0): duty = 80 + (8191 - 80) x (r / 4000 mm)^2, r clamped to 4000 mm; the square makes the eye see brightness grow about evenly with distance; 80 (1 %) keeps a close reading visibly lit |
-| fast flicker, full / off | readings arrive but are not valid (out of range, signal fail, or 0xFF error): switches on every such frame, about 20 per second |
-| frozen | readings stopped; a still target looks the same, so move a hand to check |
+| full, steady | booted, no frame yet |
+| one blink per second (full 0.5 s, off 0.5 s) | no sensor: status 0xFF frames (I2C error); toggles when 500 ms have passed since the last toggle |
+| one 10 ms flash per reading (40 per second), brightness by range | a valid reading (status 0): duty = 80 + (8191 - 80) x (r / 4000 mm)^2, r clamped to 4000 mm; the square makes the eye see brightness grow about evenly with distance; 80 (1 %) keeps a close reading visibly lit |
+| one 10 ms flash per reading at full brightness | the sensor answers but the reading is not valid (out of range, signal fail): nothing within reach reads as farthest |
+| off | readings stopped (the last flash timed out) |
 The LED is set after the frame is written, so it adds nothing to the frame's delay.
 
 Console and logs use USB-Serial-JTAG (`CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG`); bootloader log level none.
@@ -68,7 +69,7 @@ Boot line (USB): `xiao_lidar mac=.. mode=LONG budget_us=.. imp_ms=.. roi=16x16 b
 | EC-L5 | A 2-frame gap is counted as 2 | `test_ec_l5_gap` |
 | EC-L6 | A frame split across reads decodes | `test_ec_l6_split_feed` |
 | EC-L7 | I2C error (sensor unplugged) sends status 0xFF, range 0, at most one per 25 ms (so the LED flickers, not a 1 kHz glow) | bench only: SEEN on the board (Measured facts 2026-11-21) |
-| EC-L8 | the LED follows the Status LED table: full at boot, brighter as a hand moves away, fast flicker on invalid readings | NOT tested (needs a board): bench, a hand at 5 cm then 1 m, pointed at a far ceiling, sensor unplugged |
+| EC-L8 | the LED follows the Status LED table: full at boot, 1 blink/s with no sensor, a flash per reading brighter as a hand moves away, full flashes pointed at nothing, off when readings stop | bench by eye: no sensor (owner); with the sensor NOT yet seen |
 
 ## Measured facts
 | Date | Condition | Fact | Source |

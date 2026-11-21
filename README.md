@@ -15,7 +15,15 @@ A Seeed XIAO ESP32-S3 reads a VL53L1X laser over I2C and sends each reading to t
 | XIAO power | 5 V on USB-C or the 5V pin (J19 has no power pin) |
 
 ## LED (orange, on the XIAO)
-Full at boot; then brighter the farther the target (dim up close, full at 4 m); a fast flicker when readings are bad (out of range, no signal, sensor unplugged); frozen when readings stop (wave a hand to check). Details: SPEC.md Status LED.
+| LED | Meaning |
+|---|---|
+| full, steady | just booted |
+| one blink per second | no sensor (not wired, or not answering) |
+| fast flashing, one flash per reading (40/s), brighter the farther | working: dim up close, full at 4 m |
+| fast flashing at full brightness | working, but nothing within reach (pointed at the sky or too far) |
+| off | readings stopped |
+
+Details: SPEC.md Status LED.
 
 ## Build, flash, watch
 Build and flash in one command, from any folder (it loads ESP-IDF and finds the XIAO's port itself):
