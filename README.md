@@ -18,7 +18,7 @@ A Seeed XIAO ESP32-S3 reads a VL53L1X laser over I2C and sends each reading to t
 | LED | Meaning |
 |---|---|
 | full, steady | just booted |
-| one blink per second | no sensor (not wired, or not answering) |
+| one blink per second | no sensor (not wired, or not answering); the XIAO sets the sensor up again every half second, so a re-plugged sensor starts by itself |
 | fast flashing, one flash per reading (40/s), brighter the farther | working: dim up close, full at 4 m |
 | fast flashing at full brightness | working, but nothing within reach (pointed at the sky or too far) |
 | off | readings stopped |
@@ -42,7 +42,7 @@ Every reading on its own line (time, seq, range, status and its meaning), until 
 ```bash
 python3 /Users/bao/skydev/flight-range-finder/tools/view_lidar.py --port /dev/cu.usbmodem101 --each --seconds 0
 ```
-- Only one program can hold the port: stop the viewer (Ctrl+C) before `--flash`.
+- The viewer keeps waiting through a board restart or a re-plug and carries on. Only one program can use the port at a time: stop the viewer (Ctrl+C) before `--flash`.
 - With more than one USB serial device plugged in, `--flash` lists them and asks for `--device`.
 - Every frame also goes over USB by default, so the Mac can watch; it costs the UART nothing. `--usb-frames 0` keeps USB for the boot text only.
 - ESP-IDF comes from `~/skydev-research/esp/esp-idf` (or `$IDF_PATH`) with its installed Python environment, so a shell whose `python3` is a newer version still builds.

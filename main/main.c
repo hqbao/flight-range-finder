@@ -35,6 +35,8 @@
 #define LED_FULL_MM 4000u
 #define LED_FLASH_US 10000
 #define LED_ERR_HALF_US 500000
+#define READY_TIMEOUT_US 100000
+#define RESTART_AFTER_US 500000
 
 static VL53L1_Dev_t dev;
 static TaskHandle_t lidar_task;
@@ -107,9 +109,24 @@ static void show(uint8_t status, uint16_t range)
     esp_timer_start_once(led_timer, LED_FLASH_US);
 }
 
+static VL53L1_Error sensor_start(void)
+{
+    VL53L1_UserRoi_t roi = {.TopLeftX = 0, .TopLeftY = 15, .BotRightX = 15, .BotRightY = 0};
+    VL53L1_Error e = VL53L1_WaitDeviceBooted(&dev);
+    if (e == VL53L1_ERROR_NONE) e = VL53L1_DataInit(&dev);
+    if (e == VL53L1_ERROR_NONE) e = VL53L1_StaticInit(&dev);
+    if (e == VL53L1_ERROR_NONE) e = VL53L1_SetDistanceMode(&dev, VL53L1_DISTANCEMODE_LONG);
+    if (e == VL53L1_ERROR_NONE) e = VL53L1_SetMeasurementTimingBudgetMicroSeconds(&dev, TIMING_BUDGET_US);
+    if (e == VL53L1_ERROR_NONE) e = VL53L1_SetInterMeasurementPeriodMilliSeconds(&dev, INTER_MEASUREMENT_MS);
+    if (e == VL53L1_ERROR_NONE) e = VL53L1_SetUserROI(&dev, &roi);
+    if (e == VL53L1_ERROR_NONE) e = VL53L1_StartMeasurement(&dev);
+    return e;
+}
+
 static void lidar_loop(void *arg)
 {
     uint8_t seq = 0, frame[FRAME_LEN];
+    int64_t last_frame = esp_timer_get_time(), last_good = last_frame;
     for (;;) {
 #if LIDAR_INT_GPIO >= 0
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(100));
@@ -118,12 +135,12 @@ static void lidar_loop(void *arg)
 #endif
         uint8_t ready = 0;
         VL53L1_Error e = VL53L1_GetMeasurementDataReady(&dev, &ready);
-        if (e == VL53L1_ERROR_NONE && !ready) {
+        if (e == VL53L1_ERROR_NONE && !ready && esp_timer_get_time() - last_frame < READY_TIMEOUT_US) {
             continue;
         }
         uint8_t status = STATUS_ERROR;
         uint16_t range = 0;
-        if (e == VL53L1_ERROR_NONE) {
+        if (e == VL53L1_ERROR_NONE && ready) {
             VL53L1_RangingMeasurementData_t m;
             if (VL53L1_GetRangingMeasurementData(&dev, &m) == VL53L1_ERROR_NONE) {
                 status = m.RangeStatus;
@@ -133,10 +150,19 @@ static void lidar_loop(void *arg)
         build_frame(frame, seq++, status, range);
         emit(frame);
         show(status, range);
-        if (status == STATUS_ERROR) {
-            vTaskDelay(pdMS_TO_TICKS(INTER_MEASUREMENT_MS));
+        last_frame = esp_timer_get_time();
+        if (status != STATUS_ERROR) {
+            last_good = last_frame;
+            VL53L1_ClearInterruptAndStartMeasurement(&dev);
+            continue;
         }
-        VL53L1_ClearInterruptAndStartMeasurement(&dev);
+        vTaskDelay(pdMS_TO_TICKS(INTER_MEASUREMENT_MS));
+        if (esp_timer_get_time() - last_good >= RESTART_AFTER_US) {
+            last_good = esp_timer_get_time();
+            sensor_start();
+        } else {
+            VL53L1_ClearInterruptAndStartMeasurement(&dev);
+        }
     }
 }
 
@@ -197,20 +223,13 @@ void app_main(void)
     dev.I2cHandle = dh;
     dev.I2cDevAddr = I2C_ADDR_8BIT;
 
-    VL53L1_UserRoi_t roi = {.TopLeftX = 0, .TopLeftY = 15, .BotRightX = 15, .BotRightY = 0};
-    VL53L1_WaitDeviceBooted(&dev);
-    VL53L1_DataInit(&dev);
-    VL53L1_StaticInit(&dev);
-    VL53L1_SetDistanceMode(&dev, VL53L1_DISTANCEMODE_LONG);
-    VL53L1_SetMeasurementTimingBudgetMicroSeconds(&dev, TIMING_BUDGET_US);
-    VL53L1_SetInterMeasurementPeriodMilliSeconds(&dev, INTER_MEASUREMENT_MS);
-    VL53L1_SetUserROI(&dev, &roi);
+    VL53L1_Error started = sensor_start();
 
     uint8_t mac[6];
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
-    printf("xiao_lidar mac=%02x:%02x:%02x:%02x:%02x:%02x mode=LONG budget_us=%d imp_ms=%d roi=16x16 baud=%d int_gpio=%d usb_frames=%d\n",
+    printf("xiao_lidar mac=%02x:%02x:%02x:%02x:%02x:%02x mode=LONG budget_us=%d imp_ms=%d roi=16x16 baud=%d int_gpio=%d usb_frames=%d sensor_start=%d\n",
            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], TIMING_BUDGET_US, INTER_MEASUREMENT_MS,
-           FRAME_BAUD, LIDAR_INT_GPIO, LIDAR_USB_FRAMES);
+           FRAME_BAUD, LIDAR_INT_GPIO, LIDAR_USB_FRAMES, started);
 
     xTaskCreatePinnedToCore(lidar_loop, "lidar", 4096, NULL, configMAX_PRIORITIES - 2, &lidar_task, 1);
 
@@ -226,5 +245,4 @@ void app_main(void)
     ESP_ERROR_CHECK(gpio_install_isr_service(ESP_INTR_FLAG_IRAM));
     ESP_ERROR_CHECK(gpio_isr_handler_add(LIDAR_INT_GPIO, on_ready, NULL));
 #endif
-    VL53L1_StartMeasurement(&dev);
 }

@@ -59,9 +59,26 @@ class Decoder:
 def open_port(port, baud):
     try:
         import serial
-        s = serial.Serial(port, baud, timeout=0.05)
-        return (lambda: s.read(max(1, s.in_waiting))), s.close
     except ImportError:
+        serial = None
+    if serial:
+        state = {"s": None}
+
+        def rd():
+            try:
+                if state["s"] is None:
+                    state["s"] = serial.Serial(port, baud, timeout=0.05)
+                    print("# port %s open" % port, flush=True)
+                return state["s"].read(max(1, state["s"].in_waiting))
+            except (serial.SerialException, OSError) as e:
+                if state["s"] is not None:
+                    print("# port lost (%s); waiting for it to come back" % str(e).split(":")[0], flush=True)
+                    state["s"].close()
+                    state["s"] = None
+                time.sleep(0.5)
+                return b""
+        return rd, (lambda: state["s"] and state["s"].close())
+    else:
         import termios
         fd = os.open(port, os.O_RDONLY | os.O_NOCTTY | os.O_NONBLOCK)
         a = termios.tcgetattr(fd)
