@@ -104,4 +104,5 @@ Boot line (USB): `xiao_lidar mac=.. mode=SHORT budget_us=.. imp_ms=.. roi=16x16 
 - ESP32-S3 ROM prints boot text on GPIO43 at power-on; the receiver must resync (sync bytes + checksum).
 - Ranging settings are untuned for flight.
 - The range is NOT checked against a ruler; the SHORT reach (about 1.3 m) and the LED brightness are NOT verified; the range-to-wire delay is NOT measured end to end.
+- Accepted (owner 2026-11-21: probably the sensor; ignore while readings stay valid and never stop): XIAO 1c:db:d4:75:0b:b4 once ran at half rate (21/s, 47 ms apart, every reading valid, none lost) for over 10 min, reading about 33 mm short, until a reset; not reproduced in a 7 min timing run (5.55 ms from data-ready to the clear, 23.75 ms period); cause NOT confirmed; logs `scratch/xiao-lidar/tune/b1_10min.log`, test images `scratch/xiao-lidar/i2cdiag/main/main_timing.c.txt`, `main_sweep.c.txt`.
 - I2C runs on the ESP32's internal pull-ups only (about 45 kOhm, too weak for 400 kHz unless the sensor board has its own); the 7 s 0xFF dropout is NOT root-caused.
