@@ -8,6 +8,9 @@ import time
 CMD_LASER_RANGE = 0x17
 HEADER = b"db" + bytes([CMD_LASER_RANGE, 0x00, 0x04, 0x00])
 FRAME_LEN = 12
+STATUS_NAME = {0: "valid", 1: "sigma fail", 2: "signal fail", 3: "min range clipped", 4: "out of bounds",
+               5: "hardware fail", 6: "valid, no wrap check", 7: "wrap target fail", 8: "processing fail",
+               255: "no sensor (I2C error)"}
 
 
 def checksum(body):
@@ -104,23 +107,31 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", required=True)
     ap.add_argument("--baud", type=int, default=921600)
-    ap.add_argument("--seconds", type=float, default=10)
+    ap.add_argument("--seconds", type=float, default=10, help="0 = until Ctrl+C")
+    ap.add_argument("--each", action="store_true", help="print every reading, not a summary per second")
     args = ap.parse_args()
     rd, close = open_port(args.port, args.baud)
     dec = Decoder()
-    end = time.monotonic() + args.seconds
-    tick = time.monotonic() + 1
+    start = time.monotonic()
+    end = start + args.seconds if args.seconds > 0 else float("inf")
+    tick = start + 1
     frames, times, base = [], [], (0, 0)
-    while time.monotonic() < end:
-        data = rd()
-        now = time.monotonic()
-        for f in dec.feed(data):
-            frames.append(f)
-            times.append(now)
-        if now >= tick:
-            report(frames, times, dec, base)
-            frames, times, base = [], [], (dec.gaps, dec.bad_ck)
-            tick += 1
+    try:
+        while time.monotonic() < end:
+            data = rd()
+            now = time.monotonic()
+            for f in dec.feed(data):
+                if args.each:
+                    seq, st, rg = f
+                    print("%9.3f s  seq %3d  range %5d mm  status %3d %s" % (now - start, seq, rg, st, STATUS_NAME.get(st, "?")), flush=True)
+                frames.append(f)
+                times.append(now)
+            if not args.each and now >= tick:
+                report(frames, times, dec, base)
+                frames, times, base = [], [], (dec.gaps, dec.bad_ck)
+                tick += 1
+    except KeyboardInterrupt:
+        pass
     close()
 
 

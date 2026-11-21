@@ -80,9 +80,12 @@ Boot line (USB): `xiao_lidar mac=.. mode=LONG budget_us=.. imp_ms=.. roi=16x16 b
 ## Measured facts
 | Date | Condition | Fact | Source |
 |---|---|---|---|
+| 2026-11-21 | same XIAO, VL53L1X fitted, image 8f370c0, board still on the desk (scene not changed between runs) | LONG 20 ms: status 7 (wrap target fail) on 125 of 126 frames at 467-499 mm; a SHORT 20 ms test image on the same scene: status 7 on 211 of 211 frames at 380-389 mm. Two modes give two different flagged distances for one still scene: the sensor's own result is inconsistent (NOT physics; cause not yet confirmed) | `tools/view_lidar.py`, logs `scratch/xiao-lidar/tune/` |
+| 2026-11-21 | same, a hand held 5-50 cm over the sensor | status 0 on 25-65 % of frames at 49-182 mm, the rest status 7; then 7 s of status 0xFF (no I2C answer) that recovered without a restart | `scratch/xiao-lidar/hand_test.log` |
 | 2026-11-21 | XIAO ESP32-S3 MAC 1c:db:d4:75:0b:b4, image db9dc9a `--usb-frames 1`, no VL53L1X fitted, frames read over USB on a Mac | every frame status 0xFF, range 0; 38-39 frames/s, interval p50 26.0 ms p99 26.2 ms, 0 seq gaps, 0 bad checksums; the LED flickers (owner) | `tools/view_lidar.py --port /dev/cu.usbmodem101 --seconds 4` |
 
 ## Open
 - ESP32-S3 ROM prints boot text on GPIO43 at power-on; the receiver must resync (sync bytes + checksum).
 - Ranging settings are untuned for flight.
-- No reading from a fitted VL53L1X seen yet: ranging, valid status, the LED brightness and the range-to-wire delay are NOT verified running.
+- A fitted VL53L1X answers and ranges, but almost every reading is status 7 (Measured facts); valid ranging, the LED brightness and the range-to-wire delay are NOT verified running.
+- I2C runs on the ESP32's internal pull-ups only (about 45 kOhm, too weak for 400 kHz unless the sensor board has its own); the 7 s 0xFF dropout is NOT root-caused.
