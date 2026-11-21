@@ -123,7 +123,7 @@ def report(frames, times, dec, base):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", required=True)
-    ap.add_argument("--baud", type=int, default=921600)
+    ap.add_argument("--baud", type=int, default=115200)
     ap.add_argument("--seconds", type=float, default=0, help="stop after this many seconds (default 0: run until Ctrl+C)")
     ap.add_argument("--each", action="store_true", help="print every reading, not a summary per second")
     args = ap.parse_args()

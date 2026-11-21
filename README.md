@@ -1,6 +1,6 @@
 # flight-range-finder
 
-A Seeed XIAO ESP32-S3 reads a VL53L1X laser over I2C and sends each reading to the flight controller as a 12-byte missionlink DB frame (command 0x17) on its UART the moment it is read (921600 8N1, about 40 readings/s). The frame, timing, LED and edge cases are in [SPEC.md](SPEC.md).
+A Seeed XIAO ESP32-S3 reads a VL53L1X laser over I2C and sends each reading to the flight controller as a 12-byte missionlink DB frame (command 0x17) on its UART the moment it is read (115200 8N1, about 40 readings/s). The frame, timing, LED and edge cases are in [SPEC.md](SPEC.md).
 
 ## Wiring
 | From | To |
@@ -19,8 +19,7 @@ A Seeed XIAO ESP32-S3 reads a VL53L1X laser over I2C and sends each reading to t
 |---|---|
 | full, steady | just booted |
 | one blink per second | no sensor (not wired, or not answering); the XIAO sets the sensor up again every half second, so a re-plugged sensor starts by itself |
-| fast flashing, one flash per reading (40/s), brighter the farther | working: dim up close, full at 4 m |
-| fast flashing at full brightness | working, but nothing within reach (pointed at the sky or too far) |
+| fast flashing, one flash per reading (40/s), brighter the farther | working: dim up close, full at 4 m (every reading, valid or not, shows its range) |
 | off | readings stopped |
 
 Details: SPEC.md Status LED.

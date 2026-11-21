@@ -3,7 +3,7 @@
 ## Card
 - Purpose: VL53L1X range to bytes on a UART with the least latency from range-ready to the wire.
 - Inputs: VL53L1X on I2C (0x29); optional data-ready interrupt on D0.
-- Outputs: 12-byte missionlink DB frames (cmd 0x17) on UART0 TX (GPIO43, 921600 8N1), one per reading; one boot text line, then (default) the same frames, on USB-Serial-JTAG; the user LED (Status LED).
+- Outputs: 12-byte missionlink DB frames (cmd 0x17) on UART0 TX (GPIO43, 115200 8N1: owner 2026-11-21, every flight controller UART at 115200), one per reading; one boot text line, then (default) the same frames, on USB-Serial-JTAG; the user LED (Status LED).
 - Invariants: one task, core 1; frame is written to the UART before anything else after the I2C result read; no per-frame logging; the frame UART carries no text; seq +1 per frame (wraps); an I2C error, or no reading for 100 ms, still sends a frame (status 0xFF, range 0), at most one per 25 ms; after 500 ms without a good frame the sensor is set up again (Sensor restart).
 - Code: `main/main.c`; driver `libs/vl53l1x` (ST API, unchanged); host tools `tools/`.
 
@@ -23,8 +23,7 @@ LEDC PWM on GPIO21 (low-speed timer 0, channel 0, 5 kHz, 13-bit, output inverted
 |---|---|
 | full, steady | booted, no frame yet |
 | one blink per second (full 0.5 s, off 0.5 s) | no sensor: status 0xFF frames (I2C error); toggles when 500 ms have passed since the last toggle |
-| one 10 ms flash per reading (40 per second), brightness by range | a valid reading (status 0): duty = 80 + (8191 - 80) x (r / 4000 mm)^2, r clamped to 4000 mm; the square makes the eye see brightness grow about evenly with distance; 80 (1 %) keeps a close reading visibly lit |
-| one 10 ms flash per reading at full brightness | the sensor answers but the reading is not valid (out of range, signal fail): nothing within reach reads as farthest |
+| one 10 ms flash per reading (40 per second), brightness by range | every reading the sensor returns, whatever its status (owner 2026-11-21: the farther, the brighter): duty = 80 + (8191 - 80) x (r / 4000 mm)^2, r clamped to 4000 mm; the square makes the eye see brightness grow about evenly with distance; 80 (1 %) keeps a close reading visibly lit; a not-valid reading shows its reported range too (a full flash for it made a near status 7 look brighter than a far valid reading) |
 | off | readings stopped (the last flash timed out) |
 The LED is set after the frame is written, so it adds nothing to the frame's delay.
 
@@ -52,7 +51,7 @@ Example: seq 1, status 0, range 258 mm = `64 62 17 00 04 00 01 00 02 01 1f 00` (
 
 ## Latency budget (computed, NOT measured)
 - Integration: 20 ms budget; one reading per 25 ms.
-- Poll mode (default): data-ready is seen after <= 1 ms (vTaskDelay(1), FREERTOS_HZ 1000) plus one status read; then the result read (about 20 bytes at 400 kHz, about 0.5 ms computed); then `uart_write_bytes` copies 12 bytes into the 128-byte FIFO (TX ring buffer 0); serialisation 12 x 10 bit / 921600 = 130 us.
+- Poll mode (default): data-ready is seen after <= 1 ms (vTaskDelay(1), FREERTOS_HZ 1000) plus one status read; then the result read (`VL53L1_GetRangingMeasurementData` reads a 134-byte block at 400 kHz, about 3.1 ms computed, flight-controller lidar_uart SPEC Age); then `uart_write_bytes` copies 12 bytes into the 128-byte FIFO (TX ring buffer 0); serialisation 12 x 10 bit / 115200 = 1.04 ms.
 - ISR mode (`LIDAR_INT_GPIO >= 0`): the 1 ms poll wait is replaced by ISR + task-notify wake; the rest is the same. Edge follows the sensor's interrupt polarity read from the device.
 - Not measured: ISR wake time, total range-ready to first byte on the wire.
 

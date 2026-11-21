@@ -18,7 +18,7 @@
 #define PIN_FRAME_TX 43
 #define PIN_FRAME_RX 44
 #define FRAME_UART UART_NUM_0
-#define FRAME_BAUD 921600
+#define FRAME_BAUD 115200
 #define I2C_ADDR_7BIT 0x29
 #define I2C_ADDR_8BIT 0x52
 #define I2C_SPEED_HZ 400000
@@ -105,7 +105,7 @@ static void show(uint8_t status, uint16_t range)
         return;
     }
     uint32_t r = range < LED_FULL_MM ? range : LED_FULL_MM;
-    led_set(status != 0 ? LED_MAX : LED_MIN + (uint32_t)((uint64_t)(LED_MAX - LED_MIN) * r * r / (LED_FULL_MM * LED_FULL_MM)));
+    led_set(LED_MIN + (uint32_t)((uint64_t)(LED_MAX - LED_MIN) * r * r / (LED_FULL_MM * LED_FULL_MM)));
     esp_timer_start_once(led_timer, LED_FLASH_US);
 }
 
