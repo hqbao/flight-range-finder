@@ -26,15 +26,19 @@ A Seeed XIAO ESP32-S3 reads a VL53L1X laser over I2C and sends each reading to t
 Details: SPEC.md Status LED.
 
 ## Build, flash, watch
-Build and flash in one command, from any folder (it loads ESP-IDF and finds the XIAO's port itself):
+One script, from any folder (it loads ESP-IDF itself):
 ```bash
+/Users/bao/skydev/flight-range-finder/build.sh --list
 /Users/bao/skydev/flight-range-finder/build.sh --flash
+/Users/bao/skydev/flight-range-finder/build.sh --flash --device /dev/cu.usbmodem101
+/Users/bao/skydev/flight-range-finder/build.sh --build
 ```
+`--list` shows each USB serial device and what it is (a XIAO shows as Espressif USB JTAG; its serial is the board's MAC). `--flash` builds if needed and flashes the one USB serial device, or the one `--device` names. No option prints the usage.
 Watch the ranges:
 ```bash
 python3 /Users/bao/skydev/flight-range-finder/tools/view_lidar.py --port /dev/cu.usbmodem101 --seconds 10
 ```
-- Without `--flash` it only builds. With more than one USB serial device plugged in, name the port: `--flash /dev/cu.usbmodemXXX`.
+- With more than one USB serial device plugged in, `--flash` lists them and asks for `--device`.
 - Every frame also goes over USB by default, so the Mac can watch; it costs the UART nothing. `--usb-frames 0` keeps USB for the boot text only.
 - ESP-IDF comes from `~/skydev-research/esp/esp-idf` (or `$IDF_PATH`) with its installed Python environment, so a shell whose `python3` is a newer version still builds.
 - A new XIAO, or one whose program does not keep USB alive, shows no port: the command then waits 30 s; hold BOOT (B) while plugging the USB in and it flashes. After flashing from BOOT, press RESET (R) if the LED does not start. Still nothing: the cable may be charge-only, or try another USB port.
