@@ -43,6 +43,7 @@ python3 /Users/bao/skydev/flight-range-finder/tools/view_lidar.py --port /dev/cu
 ```
 - The viewer keeps waiting through a board restart or a re-plug and carries on. Only one program can use the port at a time: stop the viewer (Ctrl+C) before `--flash`.
 - With more than one USB serial device plugged in, `--flash` lists them and asks for `--device`.
+- `--flash` refuses a port another program holds (it names it), and after a failed flash prints the cause and what to do: for a board that keeps restarting or stops responding, hold BOOT (B), tap RESET (R), release BOOT, and run it again.
 - Every frame also goes over USB by default, so the Mac can watch; it costs the UART nothing. `--usb-frames 0` keeps USB for the boot text only.
 - ESP-IDF comes from `~/skydev-research/esp/esp-idf` (or `$IDF_PATH`) with its installed Python environment, so a shell whose `python3` is a newer version still builds.
 - A new XIAO, or one whose program does not keep USB alive, shows no port: the command then waits 30 s; hold BOOT (B) while plugging the USB in and it flashes. After flashing from BOOT, press RESET (R) if the LED does not start. Still nothing: the cable may be charge-only, or try another USB port.

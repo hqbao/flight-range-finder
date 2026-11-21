@@ -61,7 +61,7 @@ Example: seq 1, status 0, range 258 mm = `64 62 17 00 04 00 01 00 02 01 1f 00` (
 | `--int-gpio N` (LIDAR_INT_GPIO) | -1 | GPIO wired to VL53L1X GPIO1; -1 polls |
 | `--usb-frames 0\|1` (LIDAR_USB_FRAMES) | 1 | 1 also writes each frame to USB-Serial-JTAG after the UART write (non-blocking, dropped without a host); 0 keeps USB for the boot line |
 | `--build` / `--flash` / `--list` | - (one required; none prints the usage) | build only / build if needed then flash over USB (`idf.py -p PORT build flash`) / list the USB serial devices with vendor, product and USB serial (`tools/list_devices.py`: ioreg on macOS, /dev/serial/by-id on Linux; an ESP32-S3's USB serial is its MAC) |
-| `--device PORT` | the one USB serial device | the port `--flash` uses; none plugged: waits 30 s asking for BOOT held while plugging in (a board whose program keeps no USB port); more than one: lists them and asks for `--device` |
+| `--device PORT` | the one USB serial device | the port `--flash` uses; none plugged: waits 30 s asking for BOOT held while plugging in (a board whose program keeps no USB port); more than one: lists them and asks for `--device`; a port another program holds (lsof) is refused with its name; a failed flash prints esptool's fatal line and the fix for it |
 
 `build.sh` runs from any folder; without `idf.py` on PATH it sources `$IDF_PATH` (default `~/skydev-research/esp/esp-idf`) `export.sh` with `IDF_PYTHON_ENV_PATH` set to the installed `~/.espressif/python_env/idf*_env` (a login shell's newer `python3` otherwise makes export.sh look for an env that does not exist).
 

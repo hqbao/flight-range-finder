@@ -57,8 +57,22 @@ if ! command -v idf.py >/dev/null; then
 fi
 [[ $CLEAN == 1 ]] && idf.py fullclean
 if [[ $ACTION == flash ]]; then
+    holders=$(lsof -t "$PORT" 2>/dev/null | sort -u | paste -sd, -)
+    if [[ -n "$holders" ]]; then
+        echo "$PORT is in use by:"; ps -o pid=,command= -p "$holders" | cut -c1-120
+        echo "close it first (Ctrl+C in the viewer), then run this again"; exit 1
+    fi
     echo "flashing $PORT"
-    idf.py -DLIDAR_INT_GPIO=$INT -DLIDAR_USB_FRAMES=$USB -p "$PORT" build flash
+    log=$(mktemp -t xiao_flash)
+    set -o pipefail
+    if ! idf.py -DLIDAR_INT_GPIO=$INT -DLIDAR_USB_FRAMES=$USB -p "$PORT" build flash 2>&1 | tee "$log"; then
+        echo
+        echo "FLASH FAILED: $(grep -m1 -E 'A fatal error occurred|A serial exception error occurred|Error:' "$log")"
+        echo "- 'stopped responding', or the board keeps restarting: hold BOOT (B), tap RESET (R), release BOOT, run the same command again"
+        echo "- 'multiple access' or 'readiness to read': another program read the port during the flash; close it and run again"
+        echo "- 'port is busy or doesn't exist': the board left USB; check --list and the cable"
+        exit 1
+    fi
 else
     idf.py -DLIDAR_INT_GPIO=$INT -DLIDAR_USB_FRAMES=$USB build
 fi
