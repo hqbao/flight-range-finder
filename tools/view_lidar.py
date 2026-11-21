@@ -5,22 +5,20 @@ import statistics
 import sys
 import time
 
-SYNC = b"\xa5\x5a"
-FRAME_LEN = 8
+CMD_LASER_RANGE = 0x17
+HEADER = b"db" + bytes([CMD_LASER_RANGE, 0x00, 0x04, 0x00])
+FRAME_LEN = 12
 
 
-def checksum(payload):
-    a = b = 0
-    for x in payload:
-        a = (a + x) & 0xFF
-        b = (b + a) & 0xFF
-    return a, b
+def checksum(body):
+    s = sum(body) & 0xFFFF
+    return s & 0xFF, s >> 8
 
 
 def encode_frame(seq, status, range_mm):
-    body = bytes([seq & 0xFF, status & 0xFF, range_mm & 0xFF, (range_mm >> 8) & 0xFF])
+    body = HEADER[2:] + bytes([seq & 0xFF, status & 0xFF, range_mm & 0xFF, (range_mm >> 8) & 0xFF])
     a, b = checksum(body)
-    return SYNC + body + bytes([a, b])
+    return b"db" + body + bytes([a, b])
 
 
 class Decoder:
@@ -34,24 +32,24 @@ class Decoder:
         self.buf += data
         out = []
         while True:
-            i = self.buf.find(SYNC)
+            i = self.buf.find(HEADER)
             if i < 0:
-                del self.buf[:-1]
+                del self.buf[:-(len(HEADER) - 1)]
                 break
             del self.buf[:i]
             if len(self.buf) < FRAME_LEN:
                 break
             f = bytes(self.buf[:FRAME_LEN])
-            if checksum(f[2:6]) != (f[6], f[7]):
+            if checksum(f[2:10]) != (f[10], f[11]):
                 self.bad_ck += 1
                 del self.buf[:1]
                 continue
             del self.buf[:FRAME_LEN]
-            seq = f[2]
+            seq = f[6]
             if self.last_seq is not None:
                 self.gaps += (seq - self.last_seq - 1) & 0xFF
             self.last_seq = seq
-            out.append((seq, f[3], f[4] | (f[5] << 8)))
+            out.append((seq, f[7], f[8] | (f[9] << 8)))
         return out
 
 

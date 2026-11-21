@@ -1,6 +1,6 @@
 # flight-range-finder
 
-A Seeed XIAO ESP32-S3 reads a VL53L1X laser over I2C and sends each reading to the flight controller as an 8-byte frame on its UART the moment it is read (921600 8N1, about 40 readings/s). The frame, timing, LED and edge cases are in [SPEC.md](SPEC.md).
+A Seeed XIAO ESP32-S3 reads a VL53L1X laser over I2C and sends each reading to the flight controller as a 12-byte missionlink DB frame (command 0x17) on its UART the moment it is read (921600 8N1, about 40 readings/s). The frame, timing, LED and edge cases are in [SPEC.md](SPEC.md).
 
 ## Wiring
 | From | To |

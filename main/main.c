@@ -25,7 +25,9 @@
 #define TIMING_BUDGET_US 20000
 #define INTER_MEASUREMENT_MS 25
 #define STATUS_ERROR 0xFF
-#define FRAME_LEN 8
+#define CMD_LASER_RANGE 0x17
+#define PAYLOAD_LEN 4
+#define FRAME_LEN (6 + PAYLOAD_LEN + 2)
 #define PIN_LED 21
 #define LED_BITS 13
 #define LED_MAX ((1u << LED_BITS) - 1)
@@ -49,19 +51,22 @@ static void IRAM_ATTR on_ready(void *arg)
 
 static void build_frame(uint8_t *f, uint8_t seq, uint8_t status, uint16_t range)
 {
-    f[0] = 0xA5;
-    f[1] = 0x5A;
-    f[2] = seq;
-    f[3] = status;
-    f[4] = (uint8_t)range;
-    f[5] = (uint8_t)(range >> 8);
-    uint8_t a = 0, b = 0;
-    for (int i = 2; i < 6; i++) {
-        a = (uint8_t)(a + f[i]);
-        b = (uint8_t)(b + a);
+    f[0] = 'd';
+    f[1] = 'b';
+    f[2] = CMD_LASER_RANGE;
+    f[3] = 0x00;
+    f[4] = PAYLOAD_LEN;
+    f[5] = 0x00;
+    f[6] = seq;
+    f[7] = status;
+    f[8] = (uint8_t)range;
+    f[9] = (uint8_t)(range >> 8);
+    uint16_t sum = 0;
+    for (int i = 2; i < 10; i++) {
+        sum = (uint16_t)(sum + f[i]);
     }
-    f[6] = a;
-    f[7] = b;
+    f[10] = (uint8_t)sum;
+    f[11] = (uint8_t)(sum >> 8);
 }
 
 static void emit(const uint8_t *f)

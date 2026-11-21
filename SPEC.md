@@ -3,7 +3,7 @@
 ## Card
 - Purpose: VL53L1X range to bytes on a UART with the least latency from range-ready to the wire.
 - Inputs: VL53L1X on I2C (0x29); optional data-ready interrupt on D0.
-- Outputs: 8-byte frames on UART0 TX (GPIO43, 921600 8N1), one per reading; one boot text line, then (default) the same frames, on USB-Serial-JTAG; the user LED (Status LED).
+- Outputs: 12-byte missionlink DB frames (cmd 0x17) on UART0 TX (GPIO43, 921600 8N1), one per reading; one boot text line, then (default) the same frames, on USB-Serial-JTAG; the user LED (Status LED).
 - Invariants: one task, core 1; frame is written to the UART before anything else after the I2C result read; no per-frame logging; the frame UART carries no text; seq +1 per frame (wraps); an I2C error still sends a frame (status 0xFF, range 0), at most one per 25 ms.
 - Code: `main/main.c`; driver `libs/vl53l1x` (ST API, unchanged); host tools `tools/`.
 
@@ -33,18 +33,23 @@ Console and logs use USB-Serial-JTAG (`CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG`); boo
 ## Ranging settings (proven on hardware in flight-optflow `range_finder.c`, kept exactly; constants at the top of `main.c`)
 LONG distance mode; timing budget 20000 us; inter-measurement 25 ms; ROI 16x16 (TopLeft 0,15; BotRight 15,0); I2C 400 kHz, internal pull-ups, 7-bit 0x29 (API address 0x52).
 
-## Frame (8 bytes)
+## Frame (12 bytes: a missionlink DB frame, owner 2026-11-21)
+The flight controller's frame layout (`'d' 'b' cmd class len16 payload sum16`, flight-controller `modules/missionlink/missionlink_sender.c` and flight-vio `missionlink/check.py` `frame()`), command MISSIONLINK_CMD_LASER_RANGE 0x17 (the next free number; allocated in flight-controller `base/foundation/messages.h` by the h7v3 lidar_uart lane), class 0x00.
 | Byte | Field |
 |---|---|
-| 0,1 | 0xA5, 0x5A |
-| 2 | seq u8 |
-| 3 | status: RangeStatus as returned (0 valid); 0xFF I2C/driver error |
-| 4,5 | range_mm u16 little-endian |
-| 6,7 | ck_a, ck_b: for b in bytes 2..5: ck_a += b; ck_b += ck_a (mod 256) |
+| 0,1 | 'd' 'b' (0x64, 0x62) |
+| 2 | cmd 0x17 |
+| 3 | class 0x00 |
+| 4,5 | payload length 4, u16 little-endian |
+| 6 | seq u8 |
+| 7 | status: RangeStatus as returned (0 valid); 0xFF I2C/driver error |
+| 8,9 | range_mm u16 little-endian |
+| 10,11 | sum16 little-endian: the 16-bit sum of bytes 2..9 |
+Example: seq 1, status 0, range 258 mm = `64 62 17 00 04 00 01 00 02 01 1f 00` (`test_view_lidar.py` EC-L1, equal to flight-vio `frame(0x17, 0, ...)`).
 
 ## Latency budget (computed, NOT measured)
 - Integration: 20 ms budget; one reading per 25 ms.
-- Poll mode (default): data-ready is seen after <= 1 ms (vTaskDelay(1), FREERTOS_HZ 1000) plus one status read; then the result read (about 20 bytes at 400 kHz, about 0.5 ms computed); then `uart_write_bytes` copies 8 bytes into the 128-byte FIFO (TX ring buffer 0); serialisation 8 x 10 bit / 921600 = 87 us.
+- Poll mode (default): data-ready is seen after <= 1 ms (vTaskDelay(1), FREERTOS_HZ 1000) plus one status read; then the result read (about 20 bytes at 400 kHz, about 0.5 ms computed); then `uart_write_bytes` copies 12 bytes into the 128-byte FIFO (TX ring buffer 0); serialisation 12 x 10 bit / 921600 = 130 us.
 - ISR mode (`LIDAR_INT_GPIO >= 0`): the 1 ms poll wait is replaced by ISR + task-notify wake; the rest is the same. Edge follows the sensor's interrupt polarity read from the device.
 - Not measured: ISR wake time, total range-ready to first byte on the wire.
 
