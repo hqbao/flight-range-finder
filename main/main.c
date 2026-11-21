@@ -176,9 +176,10 @@ static VL53L1_Error sensor_start(void)
 {
     VL53L1_UserRoi_t roi = {.TopLeftX = 0, .TopLeftY = 15, .BotRightX = 15, .BotRightY = 0};
     VL53L1_Error e = VL53L1_WaitDeviceBooted(&dev);
+    if (e == VL53L1_ERROR_NONE) e = VL53L1_software_reset(&dev);
     if (e == VL53L1_ERROR_NONE) e = VL53L1_DataInit(&dev);
     if (e == VL53L1_ERROR_NONE) e = VL53L1_StaticInit(&dev);
-    if (e == VL53L1_ERROR_NONE) e = VL53L1_SetDistanceMode(&dev, VL53L1_DISTANCEMODE_LONG);
+    if (e == VL53L1_ERROR_NONE) e = VL53L1_SetDistanceMode(&dev, VL53L1_DISTANCEMODE_SHORT);
     if (e == VL53L1_ERROR_NONE) e = VL53L1_SetMeasurementTimingBudgetMicroSeconds(&dev, TIMING_BUDGET_US);
     if (e == VL53L1_ERROR_NONE) e = VL53L1_SetInterMeasurementPeriodMilliSeconds(&dev, INTER_MEASUREMENT_MS);
     if (e == VL53L1_ERROR_NONE) e = VL53L1_SetUserROI(&dev, &roi);
@@ -291,7 +292,7 @@ void app_main(void)
 
     uint8_t mac[6];
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
-    printf("xiao_lidar mac=%02x:%02x:%02x:%02x:%02x:%02x mode=LONG budget_us=%d imp_ms=%d roi=16x16 baud=%d int_gpio=%d usb_frames=%d sensor_start=%d\n",
+    printf("xiao_lidar mac=%02x:%02x:%02x:%02x:%02x:%02x mode=SHORT budget_us=%d imp_ms=%d roi=16x16 baud=%d int_gpio=%d usb_frames=%d sensor_start=%d\n",
            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], TIMING_BUDGET_US, INTER_MEASUREMENT_MS,
            FRAME_BAUD, LIDAR_INT_GPIO, LIDAR_USB_FRAMES, started);
 

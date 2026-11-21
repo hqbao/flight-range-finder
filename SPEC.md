@@ -29,8 +29,8 @@ The LED is set after the frame is written, so it adds nothing to the frame's del
 
 Console and logs use USB-Serial-JTAG (`CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG`); bootloader log level none.
 
-## Ranging settings (proven on hardware in flight-optflow `range_finder.c`, kept exactly; constants at the top of `main.c`)
-LONG distance mode; timing budget 20000 us; inter-measurement 25 ms; ROI 16x16 (TopLeft 0,15; BotRight 15,0); I2C 400 kHz, internal pull-ups, 7-bit 0x29 (API address 0x52).
+## Ranging settings (owner 2026-11-21: SHORT 20 ms; constants at the top of `main.c`)
+SHORT distance mode (about 1.3 m reach, ST datasheet, NOT measured here; beyond it the sensor reports status 4); timing budget 20000 us; inter-measurement 25 ms; ROI 16x16 (TopLeft 0,15; BotRight 15,0); I2C 400 kHz, internal pull-ups, 7-bit 0x29 (API address 0x52). LONG mode at 20 ms (flight-optflow's setting, which accepts every status except 2) flagged 99 % of readings status 7 on a wall at 0.77 m; ST's API manual allows 20 ms only in SHORT mode (33 ms minimum for LONG); LONG 33 ms worked (96.5 % valid) but costs 25 readings/s and about 13 ms more age (Measured facts).
 
 ## Result read (owner 2026-11-21: read only what the frame needs, send it, then let the API do its bookkeeping)
 - On data-ready the loop reads 15 bytes from 0x0089 (RESULT__RANGE_STATUS .. RESULT__FINAL_CROSSTALK_CORRECTED_RANGE_MM_SD0) and computes status and range exactly as `VL53L1_GetRangingMeasurementData` does (`vl53l1_api_core.c` `VL53L1_copy_sys_and_core_results_to_range_results`, `vl53l1_api.c` `SetSimpleData`, `ConvertStatusLite`):
@@ -39,7 +39,7 @@ LONG distance mode; timing budget 20000 us; inter-measurement 25 ms; ROI 16x16 (
 - Then the frame goes out, then `VL53L1_GetRangingMeasurementData` runs (its result is not used): in LOWPOWER_AUTONOMOUS it sets up the manual calibration after the first range and updates the SPAD selection every range, which the next range uses; then the interrupt is cleared.
 
 ## Sensor restart (owner 2026-11-21: a sensor that answered late never started)
-`sensor_start()` runs the whole setup (boot wait, DataInit, StaticInit, the Ranging settings, StartMeasurement) and stops at the first error; app_main calls it once and prints its result in the boot line (`sensor_start=0` is ok). The loop sends a 0xFF frame when an I2C read fails or when no reading has been ready for 100 ms (READY_TIMEOUT_US: 4 periods), waits 25 ms after each 0xFF frame, and calls `sensor_start()` again once 500 ms (RESTART_AFTER_US) have passed since the last frame that was not 0xFF, after `i2c_master_bus_reset` (9 clock pulses and a controller reset, which frees a sensor holding SDA low). Every I2C transfer gives up after 10 ms (`I2C_TIMEOUT_MS`; the longest, 134 bytes, takes about 3.1 ms; was 1 s, which stopped frames for a second on a stuck bus), and the ready check and the result read are each retried once at once, so one glitch costs no reading. A sensor that is unplugged, re-powered or answers only after boot therefore starts ranging by itself within about 0.5 s of answering; no reset is needed.
+`sensor_start()` runs the whole setup (boot wait, `VL53L1_software_reset`, DataInit, StaticInit, the Ranging settings, StartMeasurement) and stops at the first error. The reset is needed because the sensor keeps power, and the calibration it saved while ranging, across an ESP32 reset or restart: set up in another mode on top of that, it gave status 4 on every reading (Measured facts). app_main calls it once and prints its result in the boot line (`sensor_start=0` is ok). The loop sends a 0xFF frame when an I2C read fails or when no reading has been ready for 100 ms (READY_TIMEOUT_US: 4 periods), waits 25 ms after each 0xFF frame, and calls `sensor_start()` again once 500 ms (RESTART_AFTER_US) have passed since the last frame that was not 0xFF, after `i2c_master_bus_reset` (9 clock pulses and a controller reset, which frees a sensor holding SDA low). Every I2C transfer gives up after 10 ms (`I2C_TIMEOUT_MS`; the longest, 134 bytes, takes about 3.1 ms; was 1 s, which stopped frames for a second on a stuck bus), and the ready check and the result read are each retried once at once, so one glitch costs no reading. A sensor that is unplugged, re-powered or answers only after boot therefore starts ranging by itself within about 0.5 s of answering; no reset is needed.
 
 ## Frame (12 bytes: a missionlink DB frame, owner 2026-11-21)
 The flight controller's frame layout (`'d' 'b' cmd class len16 payload sum16`, flight-controller `modules/missionlink/missionlink_sender.c` and flight-vio `missionlink/check.py` `frame()`), command MISSIONLINK_CMD_LASER_RANGE 0x17 (the next free number; allocated in flight-controller `base/foundation/messages.h` by the h7v3 lidar_uart lane), class 0x00.
@@ -71,7 +71,7 @@ Example: seq 1, status 0, range 258 mm = `64 62 17 00 04 00 01 00 02 01 1f 00` (
 
 `build.sh` runs from any folder; without `idf.py` on PATH it sources `$IDF_PATH` (default `~/skydev-research/esp/esp-idf`) `export.sh` with `IDF_PYTHON_ENV_PATH` set to the installed `~/.espressif/python_env/idf*_env` (a login shell's newer `python3` otherwise makes export.sh look for an env that does not exist).
 
-Boot line (USB): `xiao_lidar mac=.. mode=LONG budget_us=.. imp_ms=.. roi=16x16 baud=.. int_gpio=.. usb_frames=..`
+Boot line (USB): `xiao_lidar mac=.. mode=SHORT budget_us=.. imp_ms=.. roi=16x16 baud=.. int_gpio=.. usb_frames=..`
 
 ## Edge cases
 | ID | Case | Test |
@@ -85,11 +85,14 @@ Boot line (USB): `xiao_lidar mac=.. mode=LONG budget_us=.. imp_ms=.. roi=16x16 b
 | EC-L7 | I2C error (sensor unplugged) sends status 0xFF, range 0, at most one per 25 ms (so the LED flickers, not a 1 kHz glow) | bench only: SEEN on the board (Measured facts 2026-11-21) |
 | EC-L9 | the sensor does not answer at power-on (or is re-powered), then answers: readings start within about 0.5 s with no reset; a sensor that answers but is not ranging gives 0xFF after 100 ms, not silence | bench: the old image's silence (LED full, steady, 0 frames/s) SEEN 2026-11-21; the fixed image's recovery by itself NOT yet seen (it started ranging at its own boot) |
 | EC-L10 | the Result read gives the same status and range as `VL53L1_GetRangingMeasurementData` on every reading | bench check image (`scratch/xiao-lidar/i2cdiag`, prints any difference): PASS 2026-11-21 (Measured facts) |
+| EC-L11 | an ESP32 reset while the powered sensor was left ranging in another distance mode still gives valid readings | bench: PASS 2026-11-21 (Measured facts; without the reset, status 4 on every reading) |
 | EC-L8 | the LED follows the Status LED table: full at boot, 1 blink/s with no sensor, a flash per reading brighter as a hand moves away, full flashes pointed at nothing, off when readings stop | bench by eye: no sensor (owner); with the sensor NOT yet seen |
 
 ## Measured facts
 | Date | Condition | Fact | Source |
 |---|---|---|---|
+| 2026-11-21 11:3x | XIAO 34:85:18:ae:a6:d4, wall 0.77 m, sensor powered throughout, images flashed back to back | no reset: SHORT firmware after a LONG run gave status 4 on every reading (range 0); the LONG test image after a SHORT run gave status 4 on 103 of 103; SHORT after SHORT was 100 % valid. With `VL53L1_software_reset` in the setup: SHORT after a LONG run 100 % valid, 772-787 mm | `tools/view_lidar.py`, `scratch/xiao-lidar/i2cdiag/ab_read.py` |
+| 2026-11-21 11:3x | XIAO MAC 34:85:18:ae:a6:d4, board fixed facing a wall at 0.77 m, test image switching three settings every 150 frames, 150 s | LONG 20 ms / 25 ms period: 1 % valid (99 % status 7); LONG 33 ms / 40 ms: 96.5 % valid, 771-783 mm; SHORT 20 ms / 25 ms: 100 % valid, 770-779 mm | `scratch/xiao-lidar/i2cdiag/ab_result_b2_wall.txt` |
 | 2026-11-21 11:22 | XIAO MAC 34:85:18:ae:a6:d4 with its VL53L1X, check image (Result read then the API read on every reading), 90 s, scene moving | 3652 readings, 0 differences in status or range, 0 API read errors; statuses 0 (567), 2 (2453), 7 (632); Result read 493 us mean, 511 us max; API read 3259 us mean, 3416 us max: the frame leaves about 2.8 ms earlier | `scratch/xiao-lidar/i2cdiag/check_light_b2.log` |
 | 2026-11-21 10:05 | same XIAO, restart-fix image, sensor re-wired by the owner (what changed: asked), still scene | status 0 on 157 of 168 frames (the rest 7) at 254-279 mm (mean 264), 24.0 ms apart, 0 gaps, 0 bad checksums | `tools/view_lidar.py --seconds 4`, `scratch/xiao-lidar/tune/restart_img.log` |
 | 2026-11-21 10:0x (before 10:05) | same XIAO, image 8f370c0, after the sensor was unplugged and re-powered | 0xFF at 39/s while it did not answer; then 0 frames/s and the LED full and steady once it answered (setup ran only at power-on, so it never started) | `scratch/xiao-lidar/tune/`, owner ("LED solid, no blinking") |
@@ -100,5 +103,5 @@ Boot line (USB): `xiao_lidar mac=.. mode=LONG budget_us=.. imp_ms=.. roi=16x16 b
 ## Open
 - ESP32-S3 ROM prints boot text on GPIO43 at power-on; the receiver must resync (sync bytes + checksum).
 - Ranging settings are untuned for flight.
-- After the owner re-wired the sensor, 93 % of readings are valid on a still scene (Measured facts); the cause of the earlier all-status-7 readings is NOT confirmed, the range is NOT checked against a ruler, and the LED brightness and the range-to-wire delay are NOT verified.
+- The range is NOT checked against a ruler; the SHORT reach (about 1.3 m) and the LED brightness are NOT verified; the range-to-wire delay is NOT measured end to end.
 - I2C runs on the ESP32's internal pull-ups only (about 45 kOhm, too weak for 400 kHz unless the sensor board has its own); the 7 s 0xFF dropout is NOT root-caused.
