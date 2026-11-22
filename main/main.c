@@ -4,6 +4,7 @@
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
 #include "driver/ledc.h"
+#include "driver/rmt_tx.h"
 #include "driver/uart.h"
 #include "driver/usb_serial_jtag.h"
 #include "esp_mac.h"
@@ -16,8 +17,6 @@
 #include "vl53l1_register_map.h"
 #include "vl53l1_register_settings.h"
 
-#define PIN_SDA 5
-#define PIN_SCL 6
 #define PIN_FRAME_TX 43
 #define PIN_FRAME_RX 44
 #define FRAME_UART UART_NUM_0
@@ -31,10 +30,26 @@
 #define CMD_LASER_RANGE 0x17
 #define PAYLOAD_LEN 4
 #define FRAME_LEN (6 + PAYLOAD_LEN + 2)
+#if LIDAR_BOARD_MINI
+#define PIN_SDA 1
+#define PIN_SCL 2
+#define PIN_LED 48
+#define LED_MAX 255u
+#define LED_MIN 3u
+#define LED_RMT_HZ 10000000
+#define LED_BIT_TICKS 12
+#define LED_ONE_HIGH_TICKS 9
+#define LED_ZERO_HIGH_TICKS 3
+#define LED_RESET_TICKS 800
+#define LED_SYMBOLS 25
+#else
+#define PIN_SDA 5
+#define PIN_SCL 6
 #define PIN_LED 21
 #define LED_BITS 13
 #define LED_MAX ((1u << LED_BITS) - 1)
 #define LED_MIN 80u
+#endif
 #define LED_FULL_MM 1000u
 #define LED_FLASH_US 10000
 #define LED_ERR_HALF_US 500000
@@ -84,15 +99,71 @@ static void emit(const uint8_t *f)
 #endif
 }
 
-static void led_set(uint32_t duty)
+#if LIDAR_BOARD_MINI
+static rmt_channel_handle_t led_chan;
+static rmt_encoder_handle_t led_enc;
+static rmt_symbol_word_t led_sym[LED_SYMBOLS];
+
+static void led_init(void)
 {
-    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty);
+    rmt_tx_channel_config_t rc = {
+        .gpio_num = PIN_LED,
+        .clk_src = RMT_CLK_SRC_DEFAULT,
+        .resolution_hz = LED_RMT_HZ,
+        .mem_block_symbols = 48,
+        .trans_queue_depth = 4,
+    };
+    ESP_ERROR_CHECK(rmt_new_tx_channel(&rc, &led_chan));
+    rmt_copy_encoder_config_t ec = {};
+    ESP_ERROR_CHECK(rmt_new_copy_encoder(&ec, &led_enc));
+    ESP_ERROR_CHECK(rmt_enable(led_chan));
+    led_sym[LED_SYMBOLS - 1] = (rmt_symbol_word_t){
+        .level0 = 0, .duration0 = LED_RESET_TICKS / 2, .level1 = 0, .duration1 = LED_RESET_TICKS / 2};
+}
+
+static void led_set(uint32_t level, bool err)
+{
+    uint32_t grb = err ? level << 8 : level << 16;
+    rmt_tx_wait_all_done(led_chan, 1);
+    for (int i = 0; i < 24; i++) {
+        uint32_t high = (grb >> (23 - i)) & 1 ? LED_ONE_HIGH_TICKS : LED_ZERO_HIGH_TICKS;
+        led_sym[i] = (rmt_symbol_word_t){.level0 = 1, .duration0 = high, .level1 = 0, .duration1 = LED_BIT_TICKS - high};
+    }
+    rmt_transmit_config_t tc = {0};
+    rmt_transmit(led_chan, led_enc, led_sym, sizeof(led_sym), &tc);
+}
+#else
+static void led_init(void)
+{
+    ledc_timer_config_t lt = {
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .duty_resolution = LED_BITS,
+        .timer_num = LEDC_TIMER_0,
+        .freq_hz = 5000,
+        .clk_cfg = LEDC_AUTO_CLK,
+    };
+    ESP_ERROR_CHECK(ledc_timer_config(&lt));
+    ledc_channel_config_t lc = {
+        .gpio_num = PIN_LED,
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .channel = LEDC_CHANNEL_0,
+        .timer_sel = LEDC_TIMER_0,
+        .duty = 0,
+        .flags.output_invert = 1,
+    };
+    ESP_ERROR_CHECK(ledc_channel_config(&lc));
+}
+
+static void led_set(uint32_t level, bool err)
+{
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, level);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
 }
+#endif
 
 static void led_off(void *arg)
 {
-    led_set(0);
+    led_set(0, false);
 }
 
 static void show(uint8_t status, uint16_t range)
@@ -105,12 +176,12 @@ static void show(uint8_t status, uint16_t range)
         if (now - last_toggle >= LED_ERR_HALF_US) {
             last_toggle = now;
             err_on = !err_on;
-            led_set(err_on ? LED_MAX : 0);
+            led_set(err_on ? LED_MAX : 0, true);
         }
         return;
     }
     uint32_t r = range < LED_FULL_MM ? range : LED_FULL_MM;
-    led_set(LED_MIN + (uint32_t)((uint64_t)(LED_MAX - LED_MIN) * r * r / (LED_FULL_MM * LED_FULL_MM)));
+    led_set(LED_MIN + (uint32_t)((uint64_t)(LED_MAX - LED_MIN) * r * r / (LED_FULL_MM * LED_FULL_MM)), false);
     esp_timer_start_once(led_timer, LED_FLASH_US);
 }
 
@@ -234,23 +305,8 @@ static void lidar_loop(void *arg)
 
 void app_main(void)
 {
-    ledc_timer_config_t lt = {
-        .speed_mode = LEDC_LOW_SPEED_MODE,
-        .duty_resolution = LED_BITS,
-        .timer_num = LEDC_TIMER_0,
-        .freq_hz = 5000,
-        .clk_cfg = LEDC_AUTO_CLK,
-    };
-    ESP_ERROR_CHECK(ledc_timer_config(&lt));
-    ledc_channel_config_t lc = {
-        .gpio_num = PIN_LED,
-        .speed_mode = LEDC_LOW_SPEED_MODE,
-        .channel = LEDC_CHANNEL_0,
-        .timer_sel = LEDC_TIMER_0,
-        .duty = LED_MAX,
-        .flags.output_invert = 1,
-    };
-    ESP_ERROR_CHECK(ledc_channel_config(&lc));
+    led_init();
+    led_set(LED_MAX, false);
     esp_timer_create_args_t ta = {.callback = led_off, .name = "led_off"};
     ESP_ERROR_CHECK(esp_timer_create(&ta, &led_timer));
     uart_config_t uc = {
@@ -292,8 +348,8 @@ void app_main(void)
 
     uint8_t mac[6];
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
-    printf("xiao_lidar mac=%02x:%02x:%02x:%02x:%02x:%02x mode=SHORT budget_us=%d imp_ms=%d roi=16x16 baud=%d int_gpio=%d usb_frames=%d sensor_start=%d\n",
-           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], TIMING_BUDGET_US, INTER_MEASUREMENT_MS,
+    printf("xiao_lidar board=%s mac=%02x:%02x:%02x:%02x:%02x:%02x mode=SHORT budget_us=%d imp_ms=%d roi=16x16 baud=%d int_gpio=%d usb_frames=%d sensor_start=%d\n",
+           LIDAR_BOARD_MINI ? "mini" : "xiao", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], TIMING_BUDGET_US, INTER_MEASUREMENT_MS,
            FRAME_BAUD, LIDAR_INT_GPIO, LIDAR_USB_FRAMES, started);
 
     xTaskCreatePinnedToCore(lidar_loop, "lidar", 4096, NULL, configMAX_PRIORITIES - 2, &lidar_task, 1);

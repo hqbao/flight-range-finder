@@ -1,10 +1,11 @@
 #!/bin/bash
 usage() {
     cat <<'EOF'
-usage: ./build.sh --build | --flash | --list [--device PORT] [--usb-frames 0|1] [--int-gpio N] [--clean]
+usage: ./build.sh --build | --flash | --list [--board mini|xiao] [--device PORT] [--usb-frames 0|1] [--int-gpio N] [--clean]
   --build          build only
   --flash          build if needed, then flash over USB
-  --list           list the USB serial devices (a XIAO shows as Espressif USB JTAG, serial = its MAC)
+  --list           list the USB serial devices (an ESP32-S3 shows as Espressif USB JTAG, serial = its MAC)
+  --board mini|xiao  ESP32-S3 SuperMini (default) or Seeed XIAO ESP32-S3: sets the I2C and LED pins
   --device PORT    the port to flash (default: the one USB serial device; none: waits 30 s for BOOT + plug in)
   --usb-frames 0|1 also send each frame over USB (default 1)
   --int-gpio N     GPIO wired to the VL53L1X GPIO1 (default -1: poll)
@@ -13,12 +14,13 @@ EOF
 }
 set -e
 cd "$(dirname "$0")"
-ACTION=""; INT=-1; USB=1; PORT=""; CLEAN=0
+ACTION=""; BOARD=mini; INT=-1; USB=1; PORT=""; CLEAN=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --build) ACTION=build; shift ;;
         --flash) ACTION=flash; shift ;;
         --list) ACTION=list; shift ;;
+        --board) BOARD="$2"; shift 2 ;;
         --device) PORT="$2"; shift 2 ;;
         --int-gpio) INT="$2"; shift 2 ;;
         --usb-frames) USB="$2"; shift 2 ;;
@@ -35,7 +37,7 @@ if [[ $ACTION == flash && -z "$PORT" ]]; then
     shopt -s nullglob
     ports=(/dev/cu.usbmodem* /dev/ttyACM*)
     if [[ ${#ports[@]} -eq 0 ]]; then
-        echo "no XIAO on USB. Hold BOOT (B) and plug the USB in now (a data cable, not charge-only); waiting 30 s..."
+        echo "no board on USB. Hold BOOT (B) and plug the USB in now (a data cable, not charge-only); waiting 30 s..."
         for _ in $(seq 60); do
             ports=(/dev/cu.usbmodem* /dev/ttyACM*)
             [[ ${#ports[@]} -gt 0 ]] && break
@@ -43,7 +45,7 @@ if [[ $ACTION == flash && -z "$PORT" ]]; then
         done
     fi
     if [[ ${#ports[@]} -eq 0 ]]; then
-        echo "still no XIAO on USB after 30 s: try another cable (data, not charge-only) or another USB port"; exit 1
+        echo "still no board on USB after 30 s: try another cable (data, not charge-only) or another USB port"; exit 1
     fi
     if [[ ${#ports[@]} -gt 1 ]]; then
         echo "found ${#ports[@]} USB serial ports; pick one with --device:"; python3 tools/list_devices.py; exit 1
@@ -62,10 +64,10 @@ if [[ $ACTION == flash ]]; then
         echo "$PORT is in use by:"; ps -o pid=,command= -p "$holders" | cut -c1-120
         echo "close it first (Ctrl+C in the viewer), then run this again"; exit 1
     fi
-    echo "flashing $PORT"
+    echo "flashing $PORT (board $BOARD)"
     log=$(mktemp -t xiao_flash)
     set -o pipefail
-    if ! idf.py -DLIDAR_INT_GPIO=$INT -DLIDAR_USB_FRAMES=$USB -p "$PORT" build flash 2>&1 | tee "$log"; then
+    if ! idf.py -DLIDAR_BOARD=$BOARD -DLIDAR_INT_GPIO=$INT -DLIDAR_USB_FRAMES=$USB -p "$PORT" build flash 2>&1 | tee "$log"; then
         echo
         echo "FLASH FAILED: $(grep -m1 -E 'A fatal error occurred|A serial exception error occurred|Error:' "$log")"
         echo "- 'stopped responding', or the board keeps restarting: hold BOOT (B), tap RESET (R), release BOOT, run the same command again"
@@ -74,5 +76,5 @@ if [[ $ACTION == flash ]]; then
         exit 1
     fi
 else
-    idf.py -DLIDAR_INT_GPIO=$INT -DLIDAR_USB_FRAMES=$USB build
+    idf.py -DLIDAR_BOARD=$BOARD -DLIDAR_INT_GPIO=$INT -DLIDAR_USB_FRAMES=$USB build
 fi

@@ -46,12 +46,12 @@ def describe_linux():
 def main():
     ports = serial_ports()
     if not ports:
-        print("no USB serial devices. A XIAO that shows none: hold BOOT (B) while plugging the USB in; else try another (data) cable or USB port.")
+        print("no USB serial devices. A board that shows none: hold BOOT (B) while plugging the USB in; else try another (data) cable or USB port.")
         return 1
     info = describe_mac() if sys.platform == "darwin" else describe_linux()
     for p in ports:
         what, serial = info.get(p, ("", ""))
-        tag = "  <- ESP32-S3 USB (XIAO)" if "Espressif" in what or "JTAG" in what else ""
+        tag = "  <- ESP32-S3 USB (SuperMini or XIAO)" if "Espressif" in what or "JTAG" in what else ""
         print(f"{p}  {what}" + (f"  serial {serial}" if serial else "") + tag)
     return 0
 

@@ -2,28 +2,32 @@
 
 ## Card
 - Purpose: VL53L1X range to bytes on a UART with the least latency from range-ready to the wire.
-- Inputs: VL53L1X on I2C (0x29); optional data-ready interrupt on D0.
-- Outputs: 12-byte missionlink DB frames (cmd 0x17) on UART0 TX (GPIO43, 115200 8N1: owner 2026-11-21, every flight controller UART at 115200), one per reading; one boot text line, then (default) the same frames, on USB-Serial-JTAG; the user LED (Status LED).
+- Boards (owner 2026-11-22): ESP32-S3 SuperMini (default) or Seeed XIAO ESP32-S3, chosen at build (`--board mini|xiao`); only the I2C pins and the LED (pin and driver) differ (Pins, Status LED).
+- Inputs: VL53L1X on I2C (0x29); optional data-ready interrupt (`--int-gpio`).
+- Outputs: 12-byte missionlink DB frames (cmd 0x17) on UART0 TX (GPIO43, 115200 8N1: owner 2026-11-21, every flight controller UART at 115200), one per reading; one boot text line, then (default) the same frames, on USB-Serial-JTAG; the board LED (Status LED).
 - Invariants: one task, core 1; the frame is written to the UART right after the 15-byte result read (Result read), before the API's own read; a failed I2C read is retried once at once; no per-frame logging; the frame UART carries no text; seq +1 per frame (wraps); an I2C error, or no reading for 100 ms, still sends a frame (status 0xFF, range 0), at most one per 25 ms; after 500 ms without a good frame the sensor is set up again (Sensor restart).
 - Code: `main/main.c`; driver `libs/vl53l1x` (ST API core unchanged; ESP32 port `platform/src/vl53l1_platform.c`, I2C timeout 10 ms); host tools `tools/`.
 
-## Pins (XIAO ESP32-S3)
-| Signal | Pin | GPIO |
+## Pins
+| Signal | SuperMini (`--board mini`, owner 2026-11-22 pinout) | XIAO (`--board xiao`) |
 |---|---|---|
-| I2C SDA | D4 | 5 |
-| I2C SCL | D5 | 6 |
-| Frame UART TX | D6 | 43 |
-| Frame UART RX (unused) | D7 | 44 |
-| VL53L1X GPIO1 (ISR mode only) | D0 | 1 |
-| User LED (on board, on when low; Seeed XIAO ESP32-S3 wiki, NOT verified on this board) | - | 21 |
+| I2C SDA | GP1 (GPIO1) | D4 (GPIO5) |
+| I2C SCL | GP2 (GPIO2) | D5 (GPIO6) |
+| Frame UART TX | TX (GPIO43) | D6 (GPIO43) |
+| Frame UART RX (unused) | RX (GPIO44) | D7 (GPIO44) |
+| VL53L1X GPIO1 (ISR mode only, `--int-gpio N`) | any free GPIO, e.g. GP4 | D0 (GPIO1) |
+| Board LED | GP48: WS2812-type RGB LED, data in (vendor pinout) | GPIO21: plain LED, on when low (Seeed wiki, NOT verified on this board) |
+The SuperMini's chip is an ESP32-S3FH4R2 (4 MB flash and 2 MB PSRAM in the package; esptool on board d4:05:92:48:f9:38). The image header says 4 MB flash (`sdkconfig.defaults`), which the XIAO's 8 MB flash also boots.
 
 ## Status LED (owner 2026-11-21: no sensor blinks once a second; a working sensor flashes once per reading, brighter the farther)
-LEDC PWM on GPIO21 (low-speed timer 0, channel 0, 5 kHz, 13-bit, output inverted for the active-low LED); a one-shot esp_timer turns each reading's flash off.
+`led_set(level, err)` is the one LED call; a one-shot esp_timer turns each reading's flash off.
+- XIAO: LEDC PWM on GPIO21 (low-speed timer 0, channel 0, 5 kHz, 13-bit, output inverted for the active-low LED); level 0..8191; `err` is ignored.
+- SuperMini: RMT TX on GPIO48 at 10 MHz, copy encoder, 25 symbols per write: 24 GRB bits MSB first (1 = 0.9 us high + 0.3 us low, 0 = 0.3 us + 0.9 us) then 80 us low (the WS2812 latch); level 0..255 on the green channel, or the red channel when `err`; a write first waits (at most 1 ms) for the previous one to end, which takes about 110 us. In the table below, 8191 and 80 read 255 and 3 on the SuperMini.
 | LED | Meaning |
 |---|---|
-| full, steady | booted, no frame yet |
-| one blink per second (full 0.5 s, off 0.5 s) | no sensor: status 0xFF frames (I2C error); toggles when 500 ms have passed since the last toggle |
-| one 10 ms flash per reading (40 per second), brightness by range | every reading the sensor returns, whatever its status (owner 2026-11-21: the farther, the brighter, full from 1 m): duty = 80 + (8191 - 80) x (r / 1000 mm)^2, r clamped to 1000 mm; the square makes the eye see brightness grow about evenly with distance; 80 (1 %) keeps a close reading visibly lit; a not-valid reading shows its reported range too (a full flash for it made a near status 7 look brighter than a far valid reading) |
+| full, steady (SuperMini: green) | booted, no frame yet |
+| one blink per second (full 0.5 s, off 0.5 s; SuperMini: red) | no sensor: status 0xFF frames (I2C error); toggles when 500 ms have passed since the last toggle |
+| one 10 ms flash per reading (40 per second), brightness by range (SuperMini: green) | every reading the sensor returns, whatever its status (owner 2026-11-21: the farther, the brighter, full from 1 m): duty = 80 + (8191 - 80) x (r / 1000 mm)^2, r clamped to 1000 mm; the square makes the eye see brightness grow about evenly with distance; 80 (1 %) keeps a close reading visibly lit; a not-valid reading shows its reported range too (a full flash for it made a near status 7 look brighter than a far valid reading) |
 | off | readings stopped (the last flash timed out) |
 The LED is set after the frame is written, so it adds nothing to the frame's delay.
 
@@ -64,6 +68,7 @@ Example: seq 1, status 0, range 258 mm = `64 62 17 00 04 00 01 00 02 01 1f 00` (
 ## Build options (`./build.sh`)
 | Option | Default | Meaning |
 |---|---|---|
+| `--board mini\|xiao` (LIDAR_BOARD) | mini | the board: sets the Pins and the LED driver; any other name stops the CMake configure with an error |
 | `--int-gpio N` (LIDAR_INT_GPIO) | -1 | GPIO wired to VL53L1X GPIO1; -1 polls |
 | `--usb-frames 0\|1` (LIDAR_USB_FRAMES) | 1 | 1 also writes each frame to USB-Serial-JTAG after the UART write (non-blocking, dropped without a host); 0 keeps USB for the boot line |
 | `--build` / `--flash` / `--list` | - (one required; none prints the usage) | build only / build if needed then flash over USB (`idf.py -p PORT build flash`) / list the USB serial devices with vendor, product and USB serial (`tools/list_devices.py`: ioreg on macOS, /dev/serial/by-id on Linux; an ESP32-S3's USB serial is its MAC) |
@@ -71,7 +76,7 @@ Example: seq 1, status 0, range 258 mm = `64 62 17 00 04 00 01 00 02 01 1f 00` (
 
 `build.sh` runs from any folder; without `idf.py` on PATH it sources `$IDF_PATH` (default `~/skydev-research/esp/esp-idf`) `export.sh` with `IDF_PYTHON_ENV_PATH` set to the installed `~/.espressif/python_env/idf*_env` (a login shell's newer `python3` otherwise makes export.sh look for an env that does not exist).
 
-Boot line (USB): `xiao_lidar mac=.. mode=SHORT budget_us=.. imp_ms=.. roi=16x16 baud=.. int_gpio=.. usb_frames=..`
+Boot line (USB): `xiao_lidar board=mini|xiao mac=.. mode=SHORT budget_us=.. imp_ms=.. roi=16x16 baud=.. int_gpio=.. usb_frames=.. sensor_start=..`
 
 ## Edge cases
 | ID | Case | Test |
@@ -86,11 +91,13 @@ Boot line (USB): `xiao_lidar mac=.. mode=SHORT budget_us=.. imp_ms=.. roi=16x16 
 | EC-L9 | the sensor does not answer at power-on (or is re-powered), then answers: readings start within about 0.5 s with no reset; a sensor that answers but is not ranging gives 0xFF after 100 ms, not silence | bench: the old image's silence (LED full, steady, 0 frames/s) SEEN 2026-11-21; the fixed image's recovery by itself NOT yet seen (it started ranging at its own boot) |
 | EC-L10 | the Result read gives the same status and range as `VL53L1_GetRangingMeasurementData` on every reading | bench check image (`scratch/xiao-lidar/i2cdiag`, prints any difference): PASS 2026-11-21 (Measured facts) |
 | EC-L11 | an ESP32 reset while the powered sensor was left ranging in another distance mode still gives valid readings | bench: PASS 2026-11-21 (Measured facts; without the reset, status 4 on every reading) |
-| EC-L8 | the LED follows the Status LED table: full at boot, 1 blink/s with no sensor, a flash per reading brighter as a hand moves away, full flashes pointed at nothing, off when readings stop | bench by eye: no sensor (owner); with the sensor NOT yet seen |
+| EC-L12 | `--board` other than mini or xiao is refused before anything is built | `./build.sh --build --board nano`: CMake error "LIDAR_BOARD must be mini or xiao" SEEN 2026-11-22 |
+| EC-L8 | the LED follows the Status LED table: full at boot, 1 blink/s with no sensor, a flash per reading brighter as a hand moves away, full flashes pointed at nothing, off when readings stop | bench by eye: XIAO no sensor (owner); with the sensor NOT yet seen; SuperMini NOT yet seen |
 
 ## Measured facts
 | Date | Condition | Fact | Source |
 |---|---|---|---|
+| 2026-11-22 | ESP32-S3 SuperMini d4:05:92:48:f9:38, image built `--board mini`, no VL53L1X wired, frames read over USB on a Mac | boot line `board=mini ... sensor_start=-13`; every frame status 0xFF, range 0; 38-39 frames/s, interval p50 26.0 ms p99 27.0 ms, 0 gaps, 0 bad checksums | `tools/view_lidar.py --port /dev/cu.usbmodem101 --seconds 4` |
 | 2026-11-21 11:3x | XIAO 34:85:18:ae:a6:d4, wall 0.77 m, sensor powered throughout, images flashed back to back | no reset: SHORT firmware after a LONG run gave status 4 on every reading (range 0); the LONG test image after a SHORT run gave status 4 on 103 of 103; SHORT after SHORT was 100 % valid. With `VL53L1_software_reset` in the setup: SHORT after a LONG run 100 % valid, 772-787 mm | `tools/view_lidar.py`, `scratch/xiao-lidar/i2cdiag/ab_read.py` |
 | 2026-11-21 11:3x | XIAO MAC 34:85:18:ae:a6:d4, board fixed facing a wall at 0.77 m, test image switching three settings every 150 frames, 150 s | LONG 20 ms / 25 ms period: 1 % valid (99 % status 7); LONG 33 ms / 40 ms: 96.5 % valid, 771-783 mm; SHORT 20 ms / 25 ms: 100 % valid, 770-779 mm | `scratch/xiao-lidar/i2cdiag/ab_result_b2_wall.txt` |
 | 2026-11-21 11:22 | XIAO MAC 34:85:18:ae:a6:d4 with its VL53L1X, check image (Result read then the API read on every reading), 90 s, scene moving | 3652 readings, 0 differences in status or range, 0 API read errors; statuses 0 (567), 2 (2453), 7 (632); Result read 493 us mean, 511 us max; API read 3259 us mean, 3416 us max: the frame leaves about 2.8 ms earlier | `scratch/xiao-lidar/i2cdiag/check_light_b2.log` |
@@ -101,6 +108,7 @@ Boot line (USB): `xiao_lidar mac=.. mode=SHORT budget_us=.. imp_ms=.. roi=16x16 
 | 2026-11-21 | XIAO ESP32-S3 MAC 1c:db:d4:75:0b:b4, image db9dc9a `--usb-frames 1`, no VL53L1X fitted, frames read over USB on a Mac | every frame status 0xFF, range 0; 38-39 frames/s, interval p50 26.0 ms p99 26.2 ms, 0 seq gaps, 0 bad checksums; the LED flickers (owner) | `tools/view_lidar.py --port /dev/cu.usbmodem101 --seconds 4` |
 
 ## Open
+- SuperMini: the RGB LED's colour order (GRB assumed: green readings, red no-sensor blink) is NOT seen; swapped colours mean an RGB-order LED. The XIAO is built with the 4 MB header but NOT yet flashed with it.
 - ESP32-S3 ROM prints boot text on GPIO43 at power-on; the receiver must resync (sync bytes + checksum).
 - Ranging settings are untuned for flight.
 - The range is NOT checked against a ruler; the SHORT reach (about 1.3 m) and the LED brightness are NOT verified; the range-to-wire delay is NOT measured end to end.
